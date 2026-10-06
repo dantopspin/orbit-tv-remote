@@ -234,6 +234,12 @@ struct PremiumView: View {
                             title: "Custom Remote",
                             detail: "Choose your default control mode and keep only the controls you use."
                         )
+
+                        PremiumFeature(
+                            icon: "star",
+                            title: "Favorite Apps & Inputs",
+                            detail: "Pin the apps and inputs you use most to the top of their lists."
+                        )
                     }
 
                     Text("The full essential remote stays available on Free.")

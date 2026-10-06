@@ -608,6 +608,87 @@ final class RemoteCustomizationStore {
 }
 
 @MainActor
+@Observable
+final class RemoteFavoritesStore {
+    private(set) var favoritesByDevice: [String: [RemoteFavorite]] = [:]
+
+    init() {
+        guard let data = UserDefaults.standard.data(
+            forKey: AppSettings.Keys.remoteFavorites
+        ),
+        let decoded = try? JSONDecoder().decode(
+            [String: [RemoteFavorite]].self,
+            from: data
+        ) else {
+            return
+        }
+
+        favoritesByDevice = decoded
+    }
+
+    func favorites(
+        for deviceID: String,
+        kind: RemoteFavoriteKind
+    ) -> [RemoteFavorite] {
+        (favoritesByDevice[deviceID] ?? []).filter { $0.kind == kind }
+    }
+
+    func contains(
+        deviceID: String,
+        kind: RemoteFavoriteKind,
+        targetID: String
+    ) -> Bool {
+        favoritesByDevice[deviceID]?.contains {
+            $0.kind == kind && $0.targetID == targetID
+        } ?? false
+    }
+
+    func toggle(
+        deviceID: String,
+        favorite: RemoteFavorite
+    ) {
+        var items = favoritesByDevice[deviceID] ?? []
+
+        if let index = items.firstIndex(where: {
+            $0.kind == favorite.kind && $0.targetID == favorite.targetID
+        }) {
+            items.remove(at: index)
+        } else {
+            items.append(favorite)
+        }
+
+        favoritesByDevice[deviceID] = items
+        persist()
+    }
+
+    func migrate(from oldDeviceID: String, to newDeviceID: String) {
+        guard oldDeviceID != newDeviceID,
+              let oldItems = favoritesByDevice.removeValue(forKey: oldDeviceID) else {
+            return
+        }
+
+        var newItems = favoritesByDevice[newDeviceID] ?? []
+
+        for item in oldItems where !newItems.contains(item) {
+            newItems.append(item)
+        }
+
+        favoritesByDevice[newDeviceID] = newItems
+        persist()
+    }
+
+    func removeAll(for deviceID: String) {
+        guard favoritesByDevice.removeValue(forKey: deviceID) != nil else { return }
+        persist()
+    }
+
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(favoritesByDevice) else { return }
+        UserDefaults.standard.set(data, forKey: AppSettings.Keys.remoteFavorites)
+    }
+}
+
+@MainActor
 private final class RemoteCommandQueue {
     private var tail: Task<Void, Never>?
 
@@ -676,6 +757,7 @@ final class AppModel {
     let discovery = DiscoveryService()
     let purchases = PurchaseManager()
     let customization = RemoteCustomizationStore()
+    let favorites = RemoteFavoritesStore()
 
     @ObservationIgnored private var adapter: TVControlling?
     @ObservationIgnored private var connectTask: Task<Void, Never>?
@@ -790,6 +872,10 @@ final class AppModel {
                 self.deviceStore.reconcile(
                     oldDeviceID: deviceID,
                     with: resolvedDevice
+                )
+                self.favorites.migrate(
+                    from: deviceID,
+                    to: resolvedDevice.id
                 )
 
                 self.connectionState = connection.state
@@ -919,6 +1005,7 @@ final class AppModel {
 
         connectTask?.cancel()
         commandQueue.cancel()
+        favorites.removeAll(for: device.id)
         deviceStore.remove(device)
         adapter = nil
 

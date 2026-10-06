@@ -161,3 +161,16 @@ struct RemoteCustomizationPreferences: Codable, Equatable, Sendable {
     var showKeyboard = true
     var showApps = true
 }
+
+enum RemoteFavoriteKind: String, Codable, Hashable, Sendable {
+    case app
+    case input
+}
+
+struct RemoteFavorite: Identifiable, Codable, Hashable, Sendable {
+    var id: String { "\(kind.rawValue)|\(targetID)" }
+
+    let kind: RemoteFavoriteKind
+    let targetID: String
+    let name: String
+}

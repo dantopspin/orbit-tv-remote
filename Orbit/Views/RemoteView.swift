@@ -543,13 +543,13 @@ struct AppsInputsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selection: Int
+    @State private var apps: [TVApp] = []
+    @State private var inputs: [TVInput] = []
+    @State private var isLoading = true
 
     init(initialSelection: Int = 0) {
         _selection = State(initialValue: initialSelection)
     }
-    @State private var apps: [TVApp] = []
-    @State private var inputs: [TVInput] = []
-    @State private var isLoading = true
 
     var body: some View {
         NavigationStack {
@@ -565,27 +565,9 @@ struct AppsInputsView: View {
                     ProgressView()
                         .frame(maxHeight: .infinity)
                 } else if selection == 0 {
-                    List(apps) { app in
-                        Button(app.name) {
-                            Task {
-                                await appModel.launch(app)
-                                dismiss()
-                            }
-                        }
-                        .foregroundStyle(.primary)
-                    }
-                    .listStyle(.plain)
+                    appsList
                 } else {
-                    List(inputs) { input in
-                        Button(input.name) {
-                            Task {
-                                await appModel.select(input)
-                                dismiss()
-                            }
-                        }
-                        .foregroundStyle(.primary)
-                    }
-                    .listStyle(.plain)
+                    inputsList
                 }
             }
             .navigationTitle("Apps & Inputs")
@@ -607,6 +589,184 @@ struct AppsInputsView: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private var currentDeviceID: String? {
+        appModel.currentDevice?.id
+    }
+
+    private var favoriteApps: [RemoteFavorite] {
+        guard appModel.purchases.isPremium,
+              let currentDeviceID else {
+            return []
+        }
+
+        return appModel.favorites.favorites(
+            for: currentDeviceID,
+            kind: .app
+        )
+    }
+
+    private var favoriteInputs: [RemoteFavorite] {
+        guard appModel.purchases.isPremium,
+              let currentDeviceID else {
+            return []
+        }
+
+        return appModel.favorites.favorites(
+            for: currentDeviceID,
+            kind: .input
+        )
+    }
+
+    private var appsList: some View {
+        List {
+            if !favoriteApps.isEmpty {
+                Section("Favorites") {
+                    ForEach(favoriteApps) { favorite in
+                        Button {
+                            Task {
+                                await appModel.launch(
+                                    TVApp(
+                                        id: favorite.targetID,
+                                        name: favorite.name
+                                    )
+                                )
+                                dismiss()
+                            }
+                        } label: {
+                            Label(favorite.name, systemImage: "star.fill")
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                }
+            }
+
+            Section(favoriteApps.isEmpty ? "Apps" : "All Apps") {
+                ForEach(apps) { app in
+                    HStack(spacing: 12) {
+                        Button(app.name) {
+                            Task {
+                                await appModel.launch(app)
+                                dismiss()
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if appModel.purchases.isPremium,
+                           let currentDeviceID {
+                            Button {
+                                appModel.favorites.toggle(
+                                    deviceID: currentDeviceID,
+                                    favorite: RemoteFavorite(
+                                        kind: .app,
+                                        targetID: app.id,
+                                        name: app.name
+                                    )
+                                )
+                                Haptics.shared.selection()
+                            } label: {
+                                Image(
+                                    systemName: appModel.favorites.contains(
+                                        deviceID: currentDeviceID,
+                                        kind: .app,
+                                        targetID: app.id
+                                    ) ? "star.fill" : "star"
+                                )
+                                .frame(width: 36, height: 36)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.primary)
+                            .accessibilityLabel(
+                                appModel.favorites.contains(
+                                    deviceID: currentDeviceID,
+                                    kind: .app,
+                                    targetID: app.id
+                                ) ? "Remove \(app.name) from favorites" : "Add \(app.name) to favorites"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+    }
+
+    private var inputsList: some View {
+        List {
+            if !favoriteInputs.isEmpty {
+                Section("Favorites") {
+                    ForEach(favoriteInputs) { favorite in
+                        Button {
+                            Task {
+                                await appModel.select(
+                                    TVInput(
+                                        id: favorite.targetID,
+                                        name: favorite.name
+                                    )
+                                )
+                                dismiss()
+                            }
+                        } label: {
+                            Label(favorite.name, systemImage: "star.fill")
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                }
+            }
+
+            Section(favoriteInputs.isEmpty ? "Inputs" : "All Inputs") {
+                ForEach(inputs) { input in
+                    HStack(spacing: 12) {
+                        Button(input.name) {
+                            Task {
+                                await appModel.select(input)
+                                dismiss()
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if appModel.purchases.isPremium,
+                           let currentDeviceID {
+                            Button {
+                                appModel.favorites.toggle(
+                                    deviceID: currentDeviceID,
+                                    favorite: RemoteFavorite(
+                                        kind: .input,
+                                        targetID: input.id,
+                                        name: input.name
+                                    )
+                                )
+                                Haptics.shared.selection()
+                            } label: {
+                                Image(
+                                    systemName: appModel.favorites.contains(
+                                        deviceID: currentDeviceID,
+                                        kind: .input,
+                                        targetID: input.id
+                                    ) ? "star.fill" : "star"
+                                )
+                                .frame(width: 36, height: 36)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.primary)
+                            .accessibilityLabel(
+                                appModel.favorites.contains(
+                                    deviceID: currentDeviceID,
+                                    kind: .input,
+                                    targetID: input.id
+                                ) ? "Remove \(input.name) from favorites" : "Add \(input.name) to favorites"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
     }
 }
 

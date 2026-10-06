@@ -15,6 +15,7 @@ struct AppSettings {
         static let installationInitialized = "orbit.installationInitialized"
         static let freeDeviceID = "orbit.freeDeviceID"
         static let remoteCustomization = "orbit.remoteCustomization"
+        static let remoteFavorites = "orbit.remoteFavorites"
     }
 }
 
