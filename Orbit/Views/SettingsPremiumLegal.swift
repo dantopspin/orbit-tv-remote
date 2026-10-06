@@ -457,11 +457,11 @@ struct PrivacyPolicyView: View {
                     ),
                     (
                         "5. Support",
-                        "If you contact [email], information you voluntarily send may be used to respond to your request."
+                        "If you contact Orbit through the support method listed on the App Store product page, information you voluntarily send may be used to respond to your request."
                     ),
                     (
                         "6. Controller",
-                        "Controller: [Your Name / Company]\nContact: [email]"
+                        "Controller: the Orbit developer identified on the App Store product page.\nSupport: use the contact method listed on Orbit’s App Store product page."
                     )
                 ]
             )
@@ -492,7 +492,7 @@ struct TermsOfServiceView: View {
                     ),
                     (
                         "4. Subscriptions",
-                        "Paid subscriptions are offered through Apple’s App Store. Available pricing and billing terms are shown before purchase. Orbit currently plans weekly and monthly subscription options."
+                        "Paid subscriptions are offered through Apple’s App Store. Available pricing and billing terms are shown before purchase. Orbit offers weekly and monthly subscription options where available."
                     ),
                     (
                         "5. Availability",
