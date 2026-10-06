@@ -16,15 +16,12 @@ jobs:
       - name: Validate app icon
         shell: bash
         run: |
-          python3 - <<'PY'
-          from PIL import Image
-          path = "Orbit/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
-          image = Image.open(path)
-          image.load()
-          assert image.size == (1024, 1024), image.size
-          assert image.mode == "RGB", image.mode
-          print("Validated", path, image.mode, image.size)
-          PY
+          ICON="Orbit/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+          INFO="$(sips -g pixelWidth -g pixelHeight -g hasAlpha "$ICON")"
+          echo "$INFO"
+          echo "$INFO" | grep -q "pixelWidth: 1024"
+          echo "$INFO" | grep -q "pixelHeight: 1024"
+          echo "$INFO" | grep -q "hasAlpha: no"
 
       - name: Select available iPhone simulator
         shell: bash
