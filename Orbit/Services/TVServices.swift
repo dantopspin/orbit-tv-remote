@@ -1218,6 +1218,7 @@ final class PurchaseManager {
 
     private(set) var products: [Product] = []
     private(set) var isPremium = false
+    private(set) var activeProductID: String?
     private(set) var isLoading = false
     private(set) var isPurchasing = false
     private(set) var purchasePending = false
@@ -1316,6 +1317,7 @@ final class PurchaseManager {
 
     func refreshEntitlements() async {
         var active = false
+        var activeProductID: String?
         let now = Date()
 
         for await result in Transaction.currentEntitlements {
@@ -1338,6 +1340,8 @@ final class PurchaseManager {
                !transaction.isUpgraded,
                isNotExpired {
                 active = true
+                activeProductID =
+                    transaction.productID
                 break
             }
         }
@@ -1351,6 +1355,8 @@ final class PurchaseManager {
         #endif
 
         isPremium = active
+        self.activeProductID =
+            activeProductID
 
         if active {
             purchasePending = false

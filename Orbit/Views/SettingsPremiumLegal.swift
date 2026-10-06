@@ -37,7 +37,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Current plan")
                         Spacer()
-                        Text(appModel.purchases.isPremium ? "Pro" : "Free")
+                        Text(currentPlanLabel)
                             .foregroundStyle(.secondary)
                     }
 
@@ -111,6 +111,21 @@ struct SettingsView: View {
                 isPresented:
                     $showManageSubscriptions
             )
+        }
+    }
+
+    private var currentPlanLabel: String {
+        guard appModel.purchases.isPremium else {
+            return "Free"
+        }
+
+        switch appModel.purchases.activeProductID {
+        case PurchaseManager.monthlyID:
+            return "Monthly"
+        case PurchaseManager.weeklyID:
+            return "Weekly"
+        default:
+            return "Pro"
         }
     }
 
