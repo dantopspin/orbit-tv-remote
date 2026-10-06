@@ -6,390 +6,20 @@ struct DPadView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let size = min(proxy.size.width, proxy.size.height)
-            let radius = size * 0.34
-
-            ZStack {
-                Circle()
-                    .fill(Color.orbitSurface)
-                    .overlay(Circle().stroke(Color.orbitSeparator, lineWidth: 0.5))
-
-                DirectionButton(systemName: "chevron.up", command: .up, onCommand: onCommand)
-                    .offset(y: -radius)
-                DirectionButton(systemName: "chevron.down", command: .down, onCommand: onCommand)
-                    .offset(y: radius)
-                DirectionButton(systemName: "chevron.left", command: .left, onCommand: onCommand)
-                    .offset(x: -radius)
-                DirectionButton(systemName: "chevron.right", command: .right, onCommand: onCommand)
-                    .offset(x: radius)
-
-                Button {
-                    onCommand(.select)
-                } label: {
-                    Text("OK")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: size * 0.32, height: size * 0.32)
-                        .background(Circle().fill(Color(uiColor: .systemBackground)))
-                        .overlay(Circle().stroke(Color.orbitSeparator, lineWidth: 0.6))
-                }
-                .buttonStyle(OrbitPressStyle(cornerRadius: size))
-                .accessibilityLabel("OK")
-            }
-        }
-        .aspectRatio(1, contentMode: .fit)
-    }
-}
-
-private struct DirectionButton: View {
-    let systemName: String
-    let command: RemoteCommand
-    let onCommand: (RemoteCommand) -> Void
-
-    private var accessibilityName: String {
-        switch command {
-        case .up: return "Up"
-        case .down: return "Down"
-        case .left: return "Left"
-        case .right: return "Right"
-        default: return "Direction"
-        }
-    }
-
-    var body: some View {
-        Button {
-            onCommand(command)
-        } label: {
-            Image(systemName: systemName)
-                .font(.system(size: 17, weight: .semibold))
-                .frame(width: 56, height: 56)
-                .contentShape(Circle())
-        }
-        .buttonStyle(OrbitPressStyle(cornerRadius: 28))
-        .buttonRepeatBehavior(.enabled)
-        .foregroundStyle(.primary)
-        .accessibilityLabel(accessibilityName)
-    }
-}
-
-struct RoundRemoteButton: View {
-    let systemName: String
-    var label: String? = nil
-    var destructivePower = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: systemName)
-                    .font(.system(size: 18, weight: .semibold))
-
-                if let label {
-                    Text(label)
-                        .font(.caption2)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    ScrollView(.vertical) {
+                        remoteControls(in: proxy)
+                            .frame(
+                                minHeight: proxy.size.height,
+                                alignment: .top
+                            )
+                    }
+                    .scrollIndicators(.hidden)
+                } else {
+                    remoteControls(in: proxy)
                 }
             }
-            .foregroundStyle(destructivePower ? Color.white : Color.primary)
-            .frame(width: 58, height: 58)
-            .background(Circle().fill(destructivePower ? Color.orbitPower : Color.orbitSurface))
-            .overlay(
-                Circle().stroke(
-                    destructivePower ? Color.clear : Color.orbitSeparator,
-                    lineWidth: 0.5
-                )
-            )
-        }
-        .buttonStyle(OrbitPressStyle(cornerRadius: 29))
-        .accessibilityLabel(label ?? (destructivePower ? "Power" : "Remote control"))
-    }
-}
-
-struct VolumePill: View {
-    let onCommand: (RemoteCommand) -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            SegmentButton(
-                systemName: "minus",
-                accessibilityLabel: "Volume Down",
-                repeats: true,
-                action: { onCommand(.volumeDown) }
-            )
-            SegmentButton(
-                systemName: "speaker.slash.fill",
-                accessibilityLabel: "Mute",
-                repeats: false,
-                action: { onCommand(.mute) }
-            )
-            SegmentButton(
-                systemName: "plus",
-                accessibilityLabel: "Volume Up",
-                repeats: true,
-                action: { onCommand(.volumeUp) }
-            )
-        }
-        .frame(height: 54)
-        .background(Capsule().fill(Color.orbitSurface))
-        .overlay(Capsule().stroke(Color.orbitSeparator, lineWidth: 0.5))
-    }
-}
-
-private struct SegmentButton: View {
-    let systemName: String
-    let accessibilityLabel: String
-    let repeats: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 17, weight: .semibold))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .buttonStyle(OrbitPressStyle(cornerRadius: 24))
-        .buttonRepeatBehavior(repeats ? .enabled : .disabled)
-        .foregroundStyle(.primary)
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
-struct PlaybackRow: View {
-    let onCommand: (RemoteCommand) -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            mini("backward.fill", "Rewind", .rewind)
-            mini("play.fill", "Play", .play)
-            mini("pause.fill", "Pause", .pause)
-            mini("forward.fill", "Fast Forward", .fastForward)
-        }
-    }
-
-    private func mini(_ icon: String, _ accessibilityLabel: String, _ command: RemoteCommand) -> some View {
-        Button {
-            onCommand(command)
-        } label: {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .frame(maxWidth: .infinity)
-                .frame(height: 46)
-                .background(Capsule().fill(Color.orbitSurface))
-                .overlay(Capsule().stroke(Color.orbitSeparator, lineWidth: 0.5))
-        }
-        .buttonStyle(OrbitPressStyle(cornerRadius: 23))
-        .foregroundStyle(.primary)
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
-struct TouchpadView: View {
-    let onCommand: (RemoteCommand) -> Void
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 34, style: .continuous)
-            .fill(Color.orbitSurface)
-            .overlay(
-                RoundedRectangle(cornerRadius: 34, style: .continuous)
-                    .stroke(Color.orbitSeparator, lineWidth: 0.5)
-            )
-            .overlay {
-                VStack(spacing: 8) {
-                    Image(systemName: "hand.draw")
-                        .font(.system(size: 28, weight: .light))
-                    Text("Swipe to navigate")
-                        .font(.subheadline.weight(.medium))
-                    Text("Tap to select")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
-            .onTapGesture {
-                onCommand(.select)
-            }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 18)
-                    .onEnded { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-
-                        guard max(abs(dx), abs(dy)) > 24 else { return }
-
-                        if abs(dx) > abs(dy) {
-                            onCommand(dx > 0 ? .right : .left)
-                        } else {
-                            onCommand(dy > 0 ? .down : .up)
-                        }
-                    }
-            )
-            .accessibilityLabel("TV touchpad")
-            .accessibilityHint("Swipe to navigate. Double tap to select.")
-            .accessibilityAction(named: "Up") { onCommand(.up) }
-            .accessibilityAction(named: "Down") { onCommand(.down) }
-            .accessibilityAction(named: "Left") { onCommand(.left) }
-            .accessibilityAction(named: "Right") { onCommand(.right) }
-            .accessibilityAction(named: "Select") { onCommand(.select) }
-    }
-}
-
-struct RemoteView: View {
-    @Environment(AppModel.self) private var appModel
-    @AppStorage(AppSettings.Keys.keepScreenAwake) private var keepScreenAwake = true
-
-    @State private var mode: RemoteControlMode = .dpad
-    @State private var showMore = false
-    @State private var showKeyboard = false
-    @State private var showAppsInputs = false
-    @State private var appsInputsInitialSelection = 0
-
-    var body: some View {
-        GeometryReader { proxy in
-            let isCompactHeight = proxy.size.height < 720
-            let dpadSize = min(
-                proxy.size.width * 0.58,
-                isCompactHeight ? 176 : 224
-            )
-            let verticalSpacing: CGFloat =
-                isCompactHeight ? 8 : 12
-
-            VStack(spacing: verticalSpacing) {
-                header
-
-                if let message = appModel.connectionMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity)
-                        .transition(.opacity)
-                }
-
-                HStack {
-                    if appModel.currentCapabilities.contains(.power) {
-                        RoundRemoteButton(
-                            systemName: "power",
-                            destructivePower: true
-                        ) {
-                            appModel.send(.power)
-                        }
-                    }
-
-                    Spacer()
-
-                    if appModel.currentCapabilities.contains(.inputSelection) &&
-                        shouldShowInput {
-                        Button {
-                            appsInputsInitialSelection = 1
-                            showAppsInputs = true
-                        } label: {
-                            Text("Input")
-                                .font(.subheadline.weight(.semibold))
-                                .frame(width: 72, height: 46)
-                                .background(Capsule().fill(Color.orbitSurface))
-                        }
-                        .buttonStyle(OrbitPressStyle(cornerRadius: 23))
-                        .foregroundStyle(.primary)
-                    }
-                }
-
-                if appModel.currentCapabilities.contains(.touchpad) {
-                    Picker("Remote mode", selection: $mode) {
-                        ForEach(RemoteControlMode.allCases, id: \.self) {
-                            Text($0.title).tag($0)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: mode) { _, newValue in
-                        Haptics.shared.selection()
-
-                        if appModel.purchases.isPremium {
-                            appModel.customization.setDefaultMode(newValue)
-                        }
-                    }
-                }
-
-                Group {
-                    if mode == .touchpad &&
-                        appModel.currentCapabilities.contains(.touchpad) {
-                        TouchpadView(onCommand: appModel.send)
-                    } else {
-                        DPadView(onCommand: appModel.send)
-                    }
-                }
-                .frame(width: dpadSize, height: dpadSize)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.16), value: mode)
-
-                HStack(spacing: 14) {
-                    Button {
-                        appModel.send(.back)
-                    } label: {
-                        Label("Back", systemImage: "arrow.uturn.backward")
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 46)
-                            .background(Capsule().fill(Color.orbitSurface))
-                    }
-
-                    Button {
-                        appModel.send(.home)
-                    } label: {
-                        Label("Home", systemImage: "house.fill")
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 46)
-                            .background(Capsule().fill(Color.orbitSurface))
-                    }
-                }
-                .buttonStyle(OrbitPressStyle(cornerRadius: 23))
-                .foregroundStyle(.primary)
-
-                if appModel.currentCapabilities.contains(.volume) ||
-                    appModel.currentCapabilities.contains(.mute) {
-                    VolumePill(onCommand: appModel.send)
-                }
-
-                if appModel.currentCapabilities.contains(.playback) &&
-                    shouldShowPlayback {
-                    PlaybackRow(onCommand: appModel.send)
-                }
-
-                if (appModel.currentCapabilities.contains(.keyboard) && shouldShowKeyboard) ||
-                    (appModel.currentCapabilities.contains(.appLaunching) && shouldShowApps) {
-                    HStack(spacing: 12) {
-                        if appModel.currentCapabilities.contains(.keyboard) &&
-                            shouldShowKeyboard {
-                            Button {
-                                showKeyboard = true
-                            } label: {
-                                Label("Keyboard", systemImage: "keyboard")
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 44)
-                            }
-                        }
-
-                        if appModel.currentCapabilities.contains(.appLaunching) &&
-                            shouldShowApps {
-                            Button {
-                                appsInputsInitialSelection = 0
-                                showAppsInputs = true
-                            } label: {
-                                Label("Apps", systemImage: "square.grid.2x2")
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 44)
-                            }
-                        }
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .background(Capsule().fill(Color.orbitSurface))
-                    .clipShape(Capsule())
-                    .buttonStyle(OrbitPressStyle(cornerRadius: 22))
-                    .foregroundStyle(.primary)
-                }
-            }
-            .padding(.horizontal, 22)
-            .padding(.top, isCompactHeight ? 4 : 8)
-            .padding(.bottom, isCompactHeight ? 8 : 14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(Color.orbitBackground.ignoresSafeArea())
         .sheet(isPresented: $showMore) {
@@ -399,21 +29,318 @@ struct RemoteView: View {
             KeyboardSheet()
         }
         .sheet(isPresented: $showAppsInputs) {
-            AppsInputsView(initialSelection: appsInputsInitialSelection)
+            AppsInputsView(
+                initialSelection:
+                    appsInputsInitialSelection
+            )
         }
         .sheet(isPresented: pairingPresented) {
             TVPairingSheet()
         }
         .onAppear {
-            UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
+            UIApplication.shared.isIdleTimerDisabled =
+                keepScreenAwake
             mode = preferredMode
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
         }
-        .onChange(of: keepScreenAwake) { _, value in
-            UIApplication.shared.isIdleTimerDisabled = value
+        .onChange(of: keepScreenAwake) {
+            _, value in
+
+            UIApplication.shared.isIdleTimerDisabled =
+                value
         }
+    }
+
+    @ViewBuilder
+    private func remoteControls(
+        in proxy: GeometryProxy
+    ) -> some View {
+        let isCompactHeight =
+            proxy.size.height < 720
+        let dpadSize = min(
+            proxy.size.width * 0.58,
+            isCompactHeight ? 176 : 224
+        )
+        let verticalSpacing: CGFloat =
+            isCompactHeight ? 8 : 12
+
+        VStack(spacing: verticalSpacing) {
+            header
+
+            if let message =
+                appModel.connectionMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(
+                        dynamicTypeSize.isAccessibilitySize
+                        ? nil
+                        : 2
+                    )
+                    .frame(maxWidth: .infinity)
+                    .transition(.opacity)
+            }
+
+            HStack {
+                if appModel.currentCapabilities
+                    .contains(.power) {
+                    RoundRemoteButton(
+                        systemName: "power",
+                        destructivePower: true
+                    ) {
+                        appModel.send(.power)
+                    }
+                }
+
+                Spacer()
+
+                if appModel.currentCapabilities
+                    .contains(.inputSelection) &&
+                    shouldShowInput {
+                    Button {
+                        appsInputsInitialSelection = 1
+                        showAppsInputs = true
+                    } label: {
+                        Text("Input")
+                            .font(
+                                .subheadline.weight(
+                                    .semibold
+                                )
+                            )
+                            .frame(
+                                minWidth: 72,
+                                minHeight: 46
+                            )
+                            .padding(
+                                .horizontal,
+                                dynamicTypeSize
+                                    .isAccessibilitySize
+                                ? 8
+                                : 0
+                            )
+                            .background(
+                                Capsule().fill(
+                                    Color.orbitSurface
+                                )
+                            )
+                    }
+                    .buttonStyle(
+                        OrbitPressStyle(
+                            cornerRadius: 23
+                        )
+                    )
+                    .foregroundStyle(.primary)
+                }
+            }
+
+            if appModel.currentCapabilities
+                .contains(.touchpad) {
+                Picker(
+                    "Remote mode",
+                    selection: $mode
+                ) {
+                    ForEach(
+                        RemoteControlMode.allCases,
+                        id: \.self
+                    ) {
+                        Text($0.title).tag($0)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: mode) {
+                    _, newValue in
+
+                    Haptics.shared.selection()
+
+                    if appModel.purchases.isPremium {
+                        appModel.customization
+                            .setDefaultMode(
+                                newValue
+                            )
+                    }
+                }
+            }
+
+            Group {
+                if mode == .touchpad &&
+                    appModel.currentCapabilities
+                        .contains(.touchpad) {
+                    TouchpadView(
+                        onCommand:
+                            appModel.send
+                    )
+                } else {
+                    DPadView(
+                        onCommand:
+                            appModel.send
+                    )
+                }
+            }
+            .frame(
+                width: dpadSize,
+                height: dpadSize
+            )
+            .transition(.opacity)
+            .animation(
+                .easeInOut(duration: 0.16),
+                value: mode
+            )
+
+            HStack(spacing: 14) {
+                Button {
+                    appModel.send(.back)
+                } label: {
+                    Label(
+                        "Back",
+                        systemImage:
+                            "arrow.uturn.backward"
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 46)
+                    .background(
+                        Capsule().fill(
+                            Color.orbitSurface
+                        )
+                    )
+                }
+
+                Button {
+                    appModel.send(.home)
+                } label: {
+                    Label(
+                        "Home",
+                        systemImage: "house.fill"
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 46)
+                    .background(
+                        Capsule().fill(
+                            Color.orbitSurface
+                        )
+                    )
+                }
+            }
+            .buttonStyle(
+                OrbitPressStyle(
+                    cornerRadius: 23
+                )
+            )
+            .foregroundStyle(.primary)
+
+            if appModel.currentCapabilities
+                .contains(.volume) ||
+                appModel.currentCapabilities
+                    .contains(.mute) {
+                VolumePill(
+                    onCommand:
+                        appModel.send
+                )
+            }
+
+            if appModel.currentCapabilities
+                .contains(.playback) &&
+                shouldShowPlayback {
+                PlaybackRow(
+                    onCommand:
+                        appModel.send
+                )
+            }
+
+            if (
+                appModel.currentCapabilities
+                    .contains(.keyboard) &&
+                shouldShowKeyboard
+            ) || (
+                appModel.currentCapabilities
+                    .contains(.appLaunching) &&
+                shouldShowApps
+            ) {
+                HStack(spacing: 12) {
+                    if appModel.currentCapabilities
+                        .contains(.keyboard) &&
+                        shouldShowKeyboard {
+                        Button {
+                            showKeyboard = true
+                        } label: {
+                            Label(
+                                "Keyboard",
+                                systemImage:
+                                    "keyboard"
+                            )
+                            .frame(
+                                maxWidth:
+                                    .infinity
+                            )
+                            .frame(
+                                minHeight: 44
+                            )
+                        }
+                    }
+
+                    if appModel.currentCapabilities
+                        .contains(.appLaunching) &&
+                        shouldShowApps {
+                        Button {
+                            appsInputsInitialSelection =
+                                0
+                            showAppsInputs = true
+                        } label: {
+                            Label(
+                                "Apps",
+                                systemImage:
+                                    "square.grid.2x2"
+                            )
+                            .frame(
+                                maxWidth:
+                                    .infinity
+                            )
+                            .frame(
+                                minHeight: 44
+                            )
+                        }
+                    }
+                }
+                .font(
+                    .subheadline.weight(
+                        .semibold
+                    )
+                )
+                .background(
+                    Capsule().fill(
+                        Color.orbitSurface
+                    )
+                )
+                .clipShape(Capsule())
+                .buttonStyle(
+                    OrbitPressStyle(
+                        cornerRadius: 22
+                    )
+                )
+                .foregroundStyle(.primary)
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(
+            .top,
+            isCompactHeight ? 4 : 8
+        )
+        .padding(
+            .bottom,
+            dynamicTypeSize.isAccessibilitySize
+            ? 24
+            : (isCompactHeight ? 8 : 14)
+        )
+        .frame(
+            maxWidth: .infinity,
+            maxHeight:
+                dynamicTypeSize.isAccessibilitySize
+                ? nil
+                : .infinity,
+            alignment: .top
+        )
     }
 
     private var preferredMode: RemoteControlMode {
