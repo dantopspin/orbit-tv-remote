@@ -218,7 +218,17 @@ final class DiscoveryService {
         devices = []
 
         scanTask = Task { [weak self] in
-            let responses = await SSDPScanner.scan(timeout: 1.8)
+            async let ssdpResponses = SSDPScanner.scan(
+                timeout: 1.8
+            )
+            async let androidTVs = AndroidTVBonjourScanner.scan(
+                timeout: 1.8
+            )
+
+            let (responses, androidDevices) = await (
+                ssdpResponses,
+                androidTVs
+            )
 
             guard !Task.isCancelled, let self else { return }
 
@@ -226,6 +236,10 @@ final class DiscoveryService {
 
             for response in responses {
                 guard let device = self.device(from: response) else { continue }
+                discovered[device.id] = device
+            }
+
+            for device in androidDevices {
                 discovered[device.id] = device
             }
 
@@ -253,6 +267,43 @@ final class DiscoveryService {
         isSearching = true
         lastError = nil
         defer { isSearching = false }
+
+        let androidPairingReachable = await LocalTCPProbe.isReachable(
+            host: trimmed,
+            port: 6467
+        )
+        let androidRemoteReachable = androidPairingReachable
+            ? true
+            : await LocalTCPProbe.isReachable(
+                host: trimmed,
+                port: 6466
+            )
+
+        if androidPairingReachable || androidRemoteReachable {
+            let androidCandidate = TVDevice(
+                id: "androidtv-\(trimmed)",
+                name: "Android TV",
+                platform: .androidTV,
+                host: trimmed,
+                port: 6466,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .power,
+                    .volume,
+                    .mute,
+                    .inputSelection,
+                    .playback,
+                    .channels
+                ]
+            )
+
+            devices.removeAll {
+                $0.id == androidCandidate.id
+            }
+            devices.append(androidCandidate)
+            return androidCandidate
+        }
 
         let samsungCandidate = TVDevice(
             id: "samsung-\(trimmed)",
@@ -778,12 +829,24 @@ final class AppModel {
         deviceStore.selectedDevice
     }
 
+    var requiresPairing: Bool {
+        if case .none = pairingRequirement {
+            return false
+        }
+        return true
+    }
+
     var connectionMessage: String? {
         switch connectionState {
         case .connecting:
             switch currentDevice?.platform {
             case .samsung, .lgWebOS:
                 return "Approve Orbit on your TV if asked."
+            case .androidTV:
+                if requiresPairing {
+                    return "Enter the code shown on your TV."
+                }
+                return "Connecting to Android TV…"
             default:
                 return nil
             }
@@ -903,7 +966,59 @@ final class AppModel {
 
     func appDidBecomeActive() {
         guard currentDevice != nil else { return }
-        connect()
+
+        if !requiresPairing {
+            connect()
+        }
+    }
+
+    @discardableResult
+    func submitPairing(
+        _ response: TVPairingResponse
+    ) async -> Bool {
+        guard let adapter,
+              let currentDevice else {
+            return false
+        }
+
+        lastControlError = nil
+
+        do {
+            try await adapter.pair(using: response)
+
+            let resolvedDevice = adapter.device
+            deviceStore.reconcile(
+                oldDeviceID: currentDevice.id,
+                with: resolvedDevice
+            )
+            favorites.migrate(
+                from: currentDevice.id,
+                to: resolvedDevice.id
+            )
+
+            pairingRequirement = .none
+            currentCapabilities = resolvedDevice.capabilities
+            connectionState = .connected
+            lastControlError = nil
+            return true
+        } catch {
+            lastControlError = error.localizedDescription
+            return false
+        }
+    }
+
+    func cancelPairing() {
+        guard requiresPairing else { return }
+
+        let activeAdapter = adapter
+
+        pairingRequirement = .none
+        connectionState = .unavailable
+        lastControlError = "Pairing canceled. Reconnect when you’re ready."
+
+        Task {
+            await activeAdapter?.disconnect()
+        }
     }
 
     func send(_ command: RemoteCommand) {

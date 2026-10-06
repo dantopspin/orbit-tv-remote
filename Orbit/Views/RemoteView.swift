@@ -377,6 +377,9 @@ struct RemoteView: View {
         .sheet(isPresented: $showAppsInputs) {
             AppsInputsView(initialSelection: appsInputsInitialSelection)
         }
+        .sheet(isPresented: pairingPresented) {
+            TVPairingSheet()
+        }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
             mode = preferredMode
@@ -421,6 +424,20 @@ struct RemoteView: View {
         appModel.customization.preferences.showApps
     }
 
+    private var pairingPresented: Binding<Bool> {
+        Binding(
+            get: {
+                appModel.requiresPairing
+            },
+            set: { presented in
+                if !presented,
+                   appModel.requiresPairing {
+                    appModel.cancelPairing()
+                }
+            }
+        )
+    }
+
     private var header: some View {
         HStack(alignment: .top) {
             Spacer()
@@ -461,6 +478,204 @@ struct RemoteView: View {
             .buttonStyle(OrbitPressStyle(cornerRadius: 22))
             .foregroundStyle(.primary)
             .accessibilityLabel("More")
+        }
+    }
+}
+
+struct TVPairingSheet: View {
+    @Environment(AppModel.self) private var appModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var code = ""
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+    @FocusState private var codeFocused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                VStack(spacing: 8) {
+                    Image(systemName: "tv")
+                        .font(.system(size: 34, weight: .medium))
+                        .frame(width: 68, height: 68)
+                        .background(
+                            Circle().fill(Color.orbitSurface)
+                        )
+
+                    Text("Pair with your TV")
+                        .font(.title2.bold())
+
+                    Text(pairingMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 10)
+                }
+
+                if case .pin(
+                    let length,
+                    _
+                ) = appModel.pairingRequirement {
+                    TextField(
+                        String(
+                            repeating: "•",
+                            count: length ?? 6
+                        ),
+                        text: $code
+                    )
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .keyboardType(.asciiCapable)
+                    .font(
+                        .system(
+                            size: 26,
+                            weight: .semibold,
+                            design: .monospaced
+                        )
+                    )
+                    .multilineTextAlignment(.center)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($codeFocused)
+                    .onChange(of: code) { _, newValue in
+                        let filtered = String(
+                            newValue
+                                .uppercased()
+                                .filter {
+                                    $0.isNumber ||
+                                    ("A"..."F").contains(
+                                        String($0)
+                                    )
+                                }
+                                .prefix(length ?? 6)
+                        )
+
+                        if filtered != code {
+                            code = filtered
+                        }
+                    }
+                }
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button(primaryButtonTitle) {
+                    submit()
+                }
+                .buttonStyle(OrbitPrimaryButtonStyle())
+                .disabled(!canSubmit || isSubmitting)
+                .overlay {
+                    if isSubmitting {
+                        ProgressView()
+                            .tint(
+                                Color(uiColor: .systemBackground)
+                            )
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(22)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(
+                    placement: .cancellationAction
+                ) {
+                    Button("Cancel") {
+                        appModel.cancelPairing()
+                        dismiss()
+                    }
+                    .disabled(isSubmitting)
+                }
+            }
+            .task {
+                if case .pin = appModel.pairingRequirement {
+                    try? await Task.sleep(
+                        nanoseconds: 250_000_000
+                    )
+                    codeFocused = true
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .interactiveDismissDisabled(isSubmitting)
+    }
+
+    private var pairingMessage: String {
+        switch appModel.pairingRequirement {
+        case .none:
+            return "Orbit is connected."
+
+        case .confirmation(let message):
+            return message ??
+                "Approve Orbit on your TV to continue."
+
+        case .pin(_, let message):
+            return message ??
+                "Enter the code shown on your TV."
+        }
+    }
+
+    private var primaryButtonTitle: String {
+        switch appModel.pairingRequirement {
+        case .confirmation:
+            return "I Approved It"
+        case .pin:
+            return "Pair"
+        case .none:
+            return "Done"
+        }
+    }
+
+    private var canSubmit: Bool {
+        switch appModel.pairingRequirement {
+        case .none:
+            return false
+
+        case .confirmation:
+            return true
+
+        case .pin(let length, _):
+            return code.count == (length ?? 6)
+        }
+    }
+
+    private func submit() {
+        let response: TVPairingResponse
+
+        switch appModel.pairingRequirement {
+        case .none:
+            dismiss()
+            return
+
+        case .confirmation:
+            response = .confirmed
+
+        case .pin:
+            response = .pin(code)
+        }
+
+        isSubmitting = true
+        errorMessage = nil
+
+        Task {
+            let success = await appModel.submitPairing(
+                response
+            )
+
+            isSubmitting = false
+
+            if success {
+                Haptics.shared.selection()
+                dismiss()
+            } else {
+                errorMessage =
+                    appModel.lastControlError ??
+                    "Pairing failed. Check the TV and try again."
+            }
         }
     }
 }

@@ -24,6 +24,10 @@
     <false/>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Orbit uses your local network to find and control supported TVs on the same Wi-Fi network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_androidtvremote2._tcp</string>
+    </array>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>
