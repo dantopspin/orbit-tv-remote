@@ -6,7 +6,6 @@ final class LGWebOSAdapter: NSObject, TVControlling {
     private(set) var device: TVDevice
 
     private static let securePort = 3001
-    private static let plainPort = 3000
 
     private let trustDelegate: LGLocalTrustDelegate
     private let eventEmitter = TVAdapterEventEmitter()
@@ -15,6 +14,7 @@ final class LGWebOSAdapter: NSObject, TVControlling {
     private var pointerSession: URLSession?
     private var pointerTask: URLSessionWebSocketTask?
     private var pointerReaderTask: Task<Void, Never>?
+    private var pointerPingTask: Task<Void, Never>?
     private var requestCounter = 0
 
     var events: AsyncStream<TVAdapterEvent> {
@@ -31,30 +31,10 @@ final class LGWebOSAdapter: NSObject, TVControlling {
     func connect() async throws -> TVConnectionInfo {
         await disconnect()
 
-        do {
-            try await connect(
-                using: "wss",
-                port: Self.securePort
-            )
-        } catch let error as TVControlError {
-            if case .permissionDenied = error {
-                throw error
-            }
-
-            await disconnect()
-
-            try await connect(
-                using: "ws",
-                port: Self.plainPort
-            )
-        } catch {
-            await disconnect()
-
-            try await connect(
-                using: "ws",
-                port: Self.plainPort
-            )
-        }
+        try await connect(
+            using: "wss",
+            port: Self.securePort
+        )
 
         await resolveStableIdentityIfAvailable()
 
@@ -83,6 +63,9 @@ final class LGWebOSAdapter: NSObject, TVControlling {
     }
 
     func disconnect() async {
+        pointerPingTask?.cancel()
+        pointerPingTask = nil
+
         pointerReaderTask?.cancel()
         pointerReaderTask = nil
 
@@ -413,6 +396,8 @@ final class LGWebOSAdapter: NSObject, TVControlling {
                         return
                     }
 
+                    self.pointerPingTask?.cancel()
+                    self.pointerPingTask = nil
                     self.eventEmitter.yield(
                         .disconnected(
                             message:
@@ -420,6 +405,65 @@ final class LGWebOSAdapter: NSObject, TVControlling {
                         )
                     )
                     return
+                }
+            }
+        }
+
+        pointerPingTask = Task {
+            @MainActor [weak self, weak task] in
+
+            guard let task else {
+                return
+            }
+
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(
+                        nanoseconds:
+                            20_000_000_000
+                    )
+                    try Task.checkCancellation()
+                    try await self?.sendPing(
+                        on: task
+                    )
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard let self,
+                          self.pointerTask === task else {
+                        return
+                    }
+
+                    self.pointerReaderTask?.cancel()
+                    self.pointerReaderTask = nil
+                    self.eventEmitter.yield(
+                        .disconnected(
+                            message:
+                                "LG TV’s navigation connection stopped responding."
+                        )
+                    )
+                    return
+                }
+            }
+        }
+    }
+
+    private func sendPing(
+        on task: URLSessionWebSocketTask
+    ) async throws {
+        try await withCheckedThrowingContinuation {
+            (
+                continuation:
+                    CheckedContinuation<Void, Error>
+            ) in
+
+            task.sendPing { error in
+                if let error {
+                    continuation.resume(
+                        throwing: error
+                    )
+                } else {
+                    continuation.resume()
                 }
             }
         }
