@@ -262,28 +262,45 @@ final class DeviceStore {
 
 @MainActor
 final class TVAdapterEventEmitter {
-    let stream: AsyncStream<TVAdapterEvent>
+    private var generation = 0
+    private var continuation:
+        AsyncStream<TVAdapterEvent>.Continuation?
 
-    private let continuation:
-        AsyncStream<TVAdapterEvent>.Continuation
+    var stream: AsyncStream<TVAdapterEvent> {
+        generation += 1
+        let currentGeneration = generation
 
-    init() {
-        var continuation:
-            AsyncStream<TVAdapterEvent>.Continuation?
+        continuation?.finish()
 
-        self.stream = AsyncStream {
-            continuation = $0
+        let pair = AsyncStream<TVAdapterEvent>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        continuation = pair.continuation
+
+        pair.continuation.onTermination = {
+            [weak self] _ in
+
+            Task { @MainActor in
+                guard let self,
+                      self.generation == currentGeneration else {
+                    return
+                }
+
+                self.continuation = nil
+            }
         }
 
-        self.continuation = continuation!
+        return pair.stream
     }
 
     func yield(_ event: TVAdapterEvent) {
-        continuation.yield(event)
+        continuation?.yield(event)
     }
 
     func finish() {
-        continuation.finish()
+        generation += 1
+        continuation?.finish()
+        continuation = nil
     }
 }
 
@@ -1212,6 +1229,7 @@ final class AppModel {
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var connectingDeviceID: String?
+    @ObservationIgnored private var wasBackgrounded = false
     @ObservationIgnored private let commandQueue = RemoteCommandQueue()
 
     init() {
@@ -1447,15 +1465,25 @@ final class AppModel {
         }
 
         guard currentDevice != nil else {
+            wasBackgrounded = false
             return
         }
 
-        if !requiresPairing {
+        let shouldReconnect =
+            wasBackgrounded ||
+            connectionState == .connecting ||
+            connectionState == .unavailable
+
+        wasBackgrounded = false
+
+        if !requiresPairing,
+           shouldReconnect {
             connect()
         }
     }
 
     func appDidEnterBackground() {
+        wasBackgrounded = true
         connectTask?.cancel()
         connectTask = nil
         reconnectTask?.cancel()

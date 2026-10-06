@@ -1,5 +1,6 @@
 import Foundation
 import Security
+@preconcurrency import Network
 @preconcurrency import AndroidTVRemoteControl
 
 @MainActor
@@ -18,6 +19,7 @@ final class AndroidTVAdapter: TVControlling {
     private var pairingManager: PairingManager?
     private var remoteManager: RemoteManager?
     private var pairingExpiryTask: Task<Void, Never>?
+    private var remoteGeneration = 0
 
     init(device: TVDevice) {
         self.device = device
@@ -35,11 +37,26 @@ final class AndroidTVAdapter: TVControlling {
                     throw error
                 }
 
+                let pairingServiceReachable =
+                    await LocalTCPProbe.isReachable(
+                        host: device.host,
+                        port: 6467,
+                        timeout: 1.0
+                    )
+
+                guard pairingServiceReachable else {
+                    throw TVControlError.transport(
+                        "Android TV rejected the saved pairing identity, but its pairing service is not reachable yet. Make sure the TV is awake and try again."
+                    )
+                }
+
                 PairingCredentialStore.remove(
                     platform: .androidTV,
                     deviceID: device.id
                 )
 
+                remoteGeneration += 1
+                remoteManager?.stateChanged = nil
                 remoteManager?.disconnect()
                 remoteManager = nil
             }
@@ -58,9 +75,12 @@ final class AndroidTVAdapter: TVControlling {
         pairingExpiryTask?.cancel()
         pairingExpiryTask = nil
 
+        pairingManager?.stateChanged = nil
         pairingManager?.disconnect()
         pairingManager = nil
 
+        remoteGeneration += 1
+        remoteManager?.stateChanged = nil
         remoteManager?.disconnect()
         remoteManager = nil
     }
@@ -211,15 +231,25 @@ final class AndroidTVAdapter: TVControlling {
                 manager.sendSecret(code)
             }
         } catch {
+            manager.stateChanged = nil
             manager.disconnect()
 
             if pairingManager === manager {
                 pairingManager = nil
             }
 
+            if case .permissionDenied =
+                (error as? TVControlError),
+               (try? await pairingRequirement()) != nil {
+                throw TVControlError.permissionDenied(
+                    "That code was not accepted. A new code is shown on your TV — enter the new code to try again."
+                )
+            }
+
             throw error
         }
 
+        manager.stateChanged = nil
         manager.disconnect()
         pairingManager = nil
 
@@ -404,6 +434,15 @@ final class AndroidTVAdapter: TVControlling {
             ) as? String ?? "1"
         )
 
+        remoteGeneration += 1
+        let generation = remoteGeneration
+
+        if let previousManager = remoteManager {
+            previousManager.stateChanged = nil
+            previousManager.disconnect()
+            remoteManager = nil
+        }
+
         let manager = RemoteManager(
             tlsManager,
             info
@@ -468,15 +507,22 @@ final class AndroidTVAdapter: TVControlling {
             throw error
         }
 
-        manager.stateChanged = { [weak self] state in
+        manager.stateChanged = { [weak self, weak manager] state in
             switch state {
             case .error(let error):
                 let message = AndroidTVAdapter.userMessage(
                     for: error
                 )
 
-                Task { @MainActor [weak self] in
-                    self?.eventEmitter.yield(
+                Task { @MainActor [weak self, weak manager] in
+                    guard let self,
+                          let manager,
+                          self.remoteGeneration == generation,
+                          self.remoteManager === manager else {
+                        return
+                    }
+
+                    self.eventEmitter.yield(
                         .disconnected(
                             message: message
                         )
@@ -543,28 +589,36 @@ final class AndroidTVAdapter: TVControlling {
                 return
             }
 
+            self.pairingManager?.stateChanged = nil
             self.pairingManager?.disconnect()
             self.pairingManager = nil
             self.pairingExpiryTask = nil
-
-            self.eventEmitter.yield(
-                .disconnected(
-                    message:
-                        "Android TV pairing expired. Start connecting again to request a new code."
-                )
-            )
         }
     }
 
     nonisolated private static func requiresRepair(
         for error: AndroidTVRemoteControlError
     ) -> Bool {
+        let underlying: Error
+
         switch error {
-        case .pairingNotSuccess:
-            return true
+        case .connectionFailed(let error),
+             .connectionWaitingError(let error):
+            underlying = error
         default:
             return false
         }
+
+        guard let networkError =
+                underlying as? NWError else {
+            return false
+        }
+
+        if case .tls = networkError {
+            return true
+        }
+
+        return false
     }
 
     nonisolated private static func userMessage(
