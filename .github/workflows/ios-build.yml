@@ -16,25 +16,11 @@ jobs:
       - name: Select available iPhone simulator
         shell: bash
         run: |
-          SIMULATOR_ID="$(
-            xcrun simctl list devices available -j |
-            python3 -c '
-import json
-import sys
-
-payload = json.load(sys.stdin)
-for devices in payload.get("devices", {}).values():
-    for device in devices:
-        if (
-            device.get("isAvailable")
-            and device.get("name", "").startswith("iPhone")
-        ):
-            print(device["udid"])
-            raise SystemExit(0)
-
-raise SystemExit("No available iPhone simulator found")
-'
-          )"
+          SIMULATOR_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')"
+          if [ -z "$SIMULATOR_ID" ]; then
+            echo "No available iPhone simulator found" >&2
+            exit 1
+          fi
           echo "SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
           echo "Using simulator $SIMULATOR_ID"
 
