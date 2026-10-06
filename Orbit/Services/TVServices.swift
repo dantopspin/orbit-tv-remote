@@ -1746,6 +1746,74 @@ final class AppModel {
     }
 
     @discardableResult
+    func prepareSelection(
+        _ device: TVDevice
+    ) async -> Bool {
+        if purchases.isPremium {
+            return select(device)
+        }
+
+        guard let freeID =
+                UserDefaults.standard.string(
+                    forKey:
+                        AppSettings.Keys.freeDeviceID
+                ) else {
+            return select(device)
+        }
+
+        if deviceStore.matchesStoredDevice(
+            device,
+            id: freeID
+        ) {
+            return select(device)
+        }
+
+        let identified: TVDevice?
+
+        switch device.platform {
+        case .samsung:
+            identified =
+                try? await SamsungTizenAdapter(
+                    device: device
+                ).identify()
+
+        case .lgWebOS:
+            identified =
+                try? await LGWebOSAdapter(
+                    device: device
+                ).identify()
+
+        #if DEBUG
+        case .roku:
+            identified =
+                try? await RokuAdapter(
+                    device: device
+                ).identify()
+        #endif
+
+        default:
+            identified = nil
+        }
+
+        if let identified {
+            guard identified.id == freeID ||
+                    deviceStore.matchesStoredDevice(
+                        identified,
+                        id: freeID
+                    ) else {
+                return false
+            }
+
+            return select(identified)
+        }
+
+        // Android TV can identify itself from the remote TLS server key
+        // during connection. Other unresolved candidates fall back to
+        // the staged verification in select(_:).
+        return select(device)
+    }
+
+    @discardableResult
     func select(_ device: TVDevice) -> Bool {
         pendingFreeVerification = nil
 

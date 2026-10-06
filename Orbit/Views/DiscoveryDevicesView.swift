@@ -53,10 +53,14 @@ struct DiscoveryView: View {
                 } else {
                     List(appModel.discovery.devices) { device in
                         Button {
-                            if appModel.select(device) {
-                                dismiss()
-                            } else {
-                                showPro = true
+                            Task {
+                                if await appModel.prepareSelection(
+                                    device
+                                ) {
+                                    dismiss()
+                                } else {
+                                    showPro = true
+                                }
                             }
                         } label: {
                             HStack(spacing: 14) {
@@ -134,7 +138,9 @@ struct DiscoveryView: View {
                             Button("Connect") {
                                 Task {
                                     if let device = await appModel.discovery.addManualTV(host: manualAddress) {
-                                        if appModel.select(device) {
+                                        if await appModel.prepareSelection(
+                                            device
+                                        ) {
                                             showManualAddress = false
                                             dismiss()
                                         } else {
