@@ -55,7 +55,7 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 0
+        configuration.timeoutIntervalForResource = 86_400
         configuration.waitsForConnectivity = false
 
         let transport = JSONWebSocketTransport(
@@ -106,6 +106,8 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
             )
         }
 
+        let connectedDeviceID = device.id
+
         transport.onEvent = {
             [weak eventEmitter] data in
 
@@ -117,6 +119,11 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
             }
 
             if event == "ms.channel.unauthorized" {
+                PairingCredentialStore.remove(
+                    platform: .samsung,
+                    deviceID: connectedDeviceID
+                )
+
                 eventEmitter?.yield(
                     .pairingRevoked(
                         message:
@@ -406,7 +413,13 @@ private struct SamsungTVMetadata {
 
     var isPoweredOff: Bool {
         guard let powerState else { return false }
-        return powerState.lowercased() == "off"
+
+        return [
+            "off",
+            "standby"
+        ].contains(
+            powerState.lowercased()
+        )
     }
 
     static func parse(

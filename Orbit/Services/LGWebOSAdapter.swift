@@ -14,6 +14,7 @@ final class LGWebOSAdapter: NSObject, TVControlling {
     private var transport: JSONWebSocketTransport?
     private var pointerSession: URLSession?
     private var pointerTask: URLSessionWebSocketTask?
+    private var pointerReaderTask: Task<Void, Never>?
     private var requestCounter = 0
 
     var events: AsyncStream<TVAdapterEvent> {
@@ -82,6 +83,9 @@ final class LGWebOSAdapter: NSObject, TVControlling {
     }
 
     func disconnect() async {
+        pointerReaderTask?.cancel()
+        pointerReaderTask = nil
+
         pointerTask?.cancel(
             with: .normalClosure,
             reason: nil
@@ -206,7 +210,7 @@ final class LGWebOSAdapter: NSObject, TVControlling {
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 0
+        configuration.timeoutIntervalForResource = 86_400
         configuration.waitsForConnectivity = false
 
         let transport = JSONWebSocketTransport(
@@ -247,9 +251,22 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         var sawPrompt = false
 
         for _ in 0..<8 {
-            let data = try await transport.nextEvent(
-                timeout: 60
-            )
+            let data: Data
+
+            do {
+                data = try await transport.nextEvent(
+                    timeout: 60
+                )
+            } catch {
+                if sawPrompt {
+                    throw TVControlError.permissionDenied(
+                        "Check your LG TV and accept the Orbit pairing prompt."
+                    )
+                }
+
+                throw error
+            }
+
             let root = try decode(data)
 
             if root["type"] as? String == "response",
@@ -277,6 +294,9 @@ final class LGWebOSAdapter: NSObject, TVControlling {
                     deviceID: device.id
                 )
 
+                let connectedDeviceID =
+                    device.id
+
                 transport.onEvent = {
                     [weak eventEmitter] data in
 
@@ -288,11 +308,28 @@ final class LGWebOSAdapter: NSObject, TVControlling {
                     }
 
                     let message =
-                        root["error"] as? String
+                        (root["error"] as? String) ??
+                        "LG TV rejected a request."
+                    let lowered =
+                        message.lowercased()
+
+                    guard lowered.contains("401") ||
+                            lowered.contains("403") ||
+                            lowered.contains(
+                                "unauthorized"
+                            ) else {
+                        return
+                    }
+
+                    PairingCredentialStore.remove(
+                        platform: .lgWebOS,
+                        deviceID: connectedDeviceID
+                    )
 
                     eventEmitter?.yield(
-                        .disconnected(
-                            message: message
+                        .pairingRevoked(
+                            message:
+                                "LG TV revoked Orbit’s remote access. Pair the TV again."
                         )
                     )
                 }
@@ -357,6 +394,35 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         )
         pointerTask = task
         task.resume()
+
+        pointerReaderTask = Task {
+            @MainActor [weak self, weak task] in
+
+            guard let task else {
+                return
+            }
+
+            while !Task.isCancelled {
+                do {
+                    _ = try await task.receive()
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard let self,
+                          self.pointerTask === task else {
+                        return
+                    }
+
+                    self.eventEmitter.yield(
+                        .disconnected(
+                            message:
+                                "LG TV’s navigation connection was interrupted."
+                        )
+                    )
+                    return
+                }
+            }
+        }
     }
 
     private func resolveManualIdentityIfAvailable() async {
@@ -479,6 +545,15 @@ final class LGWebOSAdapter: NSObject, TVControlling {
                 .string(message)
             )
         } catch {
+            if pointerTask === task {
+                eventEmitter.yield(
+                    .disconnected(
+                        message:
+                            "LG TV’s navigation connection was interrupted."
+                    )
+                )
+            }
+
             throw TVControlError.unreachable
         }
     }

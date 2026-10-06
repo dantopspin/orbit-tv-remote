@@ -6,14 +6,22 @@ final class JSONWebSocketTransport {
     typealias EventHandler = @MainActor (Data) -> Void
 
     var onUnexpectedClose: CloseHandler?
-    var onEvent: EventHandler?
+    var onEvent: EventHandler? {
+        didSet {
+            if onEvent != nil {
+                bufferedEvents.removeAll()
+            }
+        }
+    }
 
     private let url: URL
     private let session: URLSession
 
     private var webSocketTask: URLSessionWebSocketTask?
     private var readerTask: Task<Void, Never>?
+    private var pingTask: Task<Void, Never>?
     private var intentionallyClosed = false
+    private var invalidated = false
 
     private struct PendingRequest {
         let continuation: CheckedContinuation<Data, Error>
@@ -21,6 +29,7 @@ final class JSONWebSocketTransport {
     }
 
     private var pendingRequests: [String: PendingRequest] = [:]
+    private var retiredRequestIDs: [String] = []
 
     private var bufferedEvents: [Data] = []
     private var eventContinuation: CheckedContinuation<Data, Error>?
@@ -40,7 +49,10 @@ final class JSONWebSocketTransport {
     }
 
     func start() {
-        guard webSocketTask == nil else { return }
+        guard webSocketTask == nil,
+              !invalidated else {
+            return
+        }
 
         intentionallyClosed = false
 
@@ -51,13 +63,21 @@ final class JSONWebSocketTransport {
         readerTask = Task { @MainActor [weak self] in
             await self?.readLoop()
         }
+
+        pingTask = Task { @MainActor [weak self] in
+            await self?.pingLoop()
+        }
     }
 
     func disconnect() {
         intentionallyClosed = true
+        invalidated = true
 
         readerTask?.cancel()
         readerTask = nil
+
+        pingTask?.cancel()
+        pingTask = nil
 
         webSocketTask?.cancel(
             with: .normalClosure,
@@ -70,6 +90,7 @@ final class JSONWebSocketTransport {
         failAllPending(with: CancellationError())
         failEventWaiter(with: CancellationError())
         bufferedEvents.removeAll()
+        retiredRequestIDs.removeAll()
     }
 
     func sendJSONObject(
@@ -223,15 +244,25 @@ final class JSONWebSocketTransport {
     }
 
     private func route(_ data: Data) {
-        if let id = Self.messageID(from: data),
-           let pending = pendingRequests.removeValue(
-               forKey: id
-           ) {
-            pending.timeoutTask.cancel()
-            pending.continuation.resume(
-                returning: data
-            )
-            return
+        if let id = Self.messageID(from: data) {
+            if let pending = pendingRequests.removeValue(
+                forKey: id
+            ) {
+                pending.timeoutTask.cancel()
+                pending.continuation.resume(
+                    returning: data
+                )
+                return
+            }
+
+            if let index = retiredRequestIDs.firstIndex(
+                of: id
+            ) {
+                retiredRequestIDs.remove(
+                    at: index
+                )
+                return
+            }
         }
 
         if let eventContinuation {
@@ -267,7 +298,16 @@ final class JSONWebSocketTransport {
         }
 
         intentionallyClosed = true
+
+        pingTask?.cancel()
+        pingTask = nil
+
+        let closingTask = webSocketTask
         webSocketTask = nil
+        closingTask?.cancel(
+            with: .goingAway,
+            reason: nil
+        )
 
         failAllPending(
             with: TVControlError.unreachable
@@ -290,6 +330,7 @@ final class JSONWebSocketTransport {
         }
 
         pending.timeoutTask.cancel()
+        retireRequestID(id)
         pending.continuation.resume(
             throwing: error
         )
@@ -323,6 +364,65 @@ final class JSONWebSocketTransport {
         eventContinuation.resume(
             throwing: error
         )
+    }
+
+    private func pingLoop() async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(
+                    nanoseconds: 25_000_000_000
+                )
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                try await sendPing()
+            } catch is CancellationError {
+                return
+            } catch {
+                handleUnexpectedClose(error)
+                return
+            }
+        }
+    }
+
+    private func sendPing() async throws {
+        guard let webSocketTask else {
+            throw TVControlError.unreachable
+        }
+
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+
+            webSocketTask.sendPing { error in
+                if let error {
+                    continuation.resume(
+                        throwing: error
+                    )
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    private func retireRequestID(
+        _ id: String
+    ) {
+        guard !retiredRequestIDs.contains(
+            id
+        ) else {
+            return
+        }
+
+        retiredRequestIDs.append(id)
+
+        if retiredRequestIDs.count > 64 {
+            retiredRequestIDs.removeFirst(
+                retiredRequestIDs.count - 64
+            )
+        }
     }
 
     private static func data(
