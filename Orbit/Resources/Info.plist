@@ -20,6 +20,8 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Orbit uses your local network to find and control supported TVs on the same Wi-Fi network.</string>
     <key>NSAppTransportSecurity</key>
