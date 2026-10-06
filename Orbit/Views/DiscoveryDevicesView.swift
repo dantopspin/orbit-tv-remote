@@ -5,6 +5,7 @@ struct DiscoveryView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var showManualAddress = false
+    @State private var showPro = false
     @State private var manualAddress = ""
 
     var body: some View {
@@ -52,8 +53,11 @@ struct DiscoveryView: View {
                 } else {
                     List(appModel.discovery.devices) { device in
                         Button {
-                            appModel.select(device)
-                            dismiss()
+                            if appModel.select(device) {
+                                dismiss()
+                            } else {
+                                showPro = true
+                            }
                         } label: {
                             HStack(spacing: 14) {
                                 Image(systemName: "tv")
@@ -91,6 +95,9 @@ struct DiscoveryView: View {
             .task {
                 appModel.discovery.startScan()
             }
+            .sheet(isPresented: $showPro) {
+                PremiumView()
+            }
             .sheet(isPresented: $showManualAddress) {
                 NavigationStack {
                     Form {
@@ -127,9 +134,13 @@ struct DiscoveryView: View {
                             Button("Connect") {
                                 Task {
                                     if let device = await appModel.discovery.addManualTV(host: manualAddress) {
-                                        appModel.select(device)
-                                        showManualAddress = false
-                                        dismiss()
+                                        if appModel.select(device) {
+                                            showManualAddress = false
+                                            dismiss()
+                                        } else {
+                                            showManualAddress = false
+                                            showPro = true
+                                        }
                                     }
                                 }
                             }
@@ -151,6 +162,7 @@ struct DevicesView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showAddTV = false
     @State private var showPremium = false
+    @State private var showRooms = false
 
     var body: some View {
         NavigationStack {
@@ -179,8 +191,12 @@ struct DevicesView: View {
                                 if appModel.deviceStore.selectedDeviceID == device.id {
                                     Image(systemName: "checkmark.circle.fill")
                                 } else if !appModel.canUse(device) {
-                                    Image(systemName: "lock.fill")
-                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "lock.fill")
+                                        Text("Pro")
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                    .foregroundStyle(.secondary)
                                 }
                             }
                         }
@@ -190,7 +206,8 @@ struct DevicesView: View {
 
                 Section {
                     Button {
-                        if appModel.purchases.isPremium || appModel.deviceStore.availableDevices.isEmpty {
+                        if appModel.purchases.isPremium ||
+                            appModel.deviceStore.availableDevices.isEmpty {
                             showAddTV = true
                         } else {
                             showPremium = true
@@ -198,11 +215,29 @@ struct DevicesView: View {
                     } label: {
                         Label("Add TV", systemImage: "plus")
                     }
+
+                    Button {
+                        if appModel.purchases.isPremium {
+                            showRooms = true
+                        } else {
+                            showPremium = true
+                        }
+                    } label: {
+                        HStack {
+                            Label("Rooms", systemImage: "house")
+                            Spacer()
+                            if !appModel.purchases.isPremium {
+                                Text("Pro")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
 
                 if !appModel.purchases.isPremium {
                     Section {
-                        Text("Free includes 1 active saved TV. Extra TVs stay remembered if Premium expires.")
+                        Text("Free includes one TV and every essential remote control. Orbit Pro adds multiple TVs, rooms, customization, and favorites.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -221,6 +256,103 @@ struct DevicesView: View {
             }
             .sheet(isPresented: $showPremium) {
                 PremiumView()
+            }
+            .sheet(isPresented: $showRooms) {
+                RoomAssignmentsView()
+            }
+        }
+    }
+}
+
+private struct RoomAssignmentsView: View {
+    @Environment(AppModel.self) private var appModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var editingDeviceID: String?
+    @State private var roomName = ""
+    @State private var showRoomEditor = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(
+                        appModel.deviceStore.availableDevices
+                    ) { device in
+                        Button {
+                            editingDeviceID = device.id
+                            roomName = device.roomName ?? ""
+                            showRoomEditor = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "tv")
+
+                                VStack(
+                                    alignment: .leading,
+                                    spacing: 2
+                                ) {
+                                    Text(device.name)
+
+                                    Text(
+                                        device.roomName ??
+                                        "No room assigned"
+                                    )
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                } footer: {
+                    Text("Room names stay on this iPhone and make it easier to tell your TVs apart.")
+                }
+            }
+            .navigationTitle("Rooms")
+            .toolbar {
+                ToolbarItem(
+                    placement: .cancellationAction
+                ) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+            .alert(
+                "Assign Room",
+                isPresented: $showRoomEditor
+            ) {
+                TextField(
+                    "Living Room",
+                    text: $roomName
+                )
+
+                Button("Clear") {
+                    if let editingDeviceID {
+                        appModel.deviceStore.setRoomName(
+                            for: editingDeviceID,
+                            to: nil
+                        )
+                    }
+                }
+
+                Button("Save") {
+                    if let editingDeviceID {
+                        appModel.deviceStore.setRoomName(
+                            for: editingDeviceID,
+                            to: roomName
+                        )
+                    }
+                }
+
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Give this TV a room name.")
             }
         }
     }

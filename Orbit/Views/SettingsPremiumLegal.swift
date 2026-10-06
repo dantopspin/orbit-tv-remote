@@ -33,15 +33,15 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Plan") {
+                Section("Orbit Pro") {
                     HStack {
                         Text("Current plan")
                         Spacer()
-                        Text(appModel.purchases.isPremium ? "Premium" : "Free")
+                        Text(appModel.purchases.isPremium ? "Pro" : "Free")
                             .foregroundStyle(.secondary)
                     }
 
-                    Button("View Plans") {
+                    Button(appModel.purchases.isPremium ? "View Plan" : "View Orbit Pro") {
                         showPremium = true
                     }
 
@@ -217,11 +217,15 @@ struct PremiumView: View {
                     OrbitMark(size: 66)
                         .padding(.top, 12)
 
-                    VStack(spacing: 6) {
-                        Text("Orbit Premium")
+                    VStack(spacing: 7) {
+                        Text("Orbit Pro")
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+
+                        Text("Make Orbit yours.")
                             .font(.largeTitle.bold())
 
-                        Text("More control for homes with more than one TV.")
+                        Text("More TVs, your preferred layout, and the shortcuts you use most.")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
@@ -229,8 +233,8 @@ struct PremiumView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         PremiumFeature(
                             icon: "tv.and.mediabox",
-                            title: "Multiple TVs",
-                            detail: "Save and switch between more than one TV."
+                            title: "Multiple TVs & Rooms",
+                            detail: "Keep every TV ready and organize them by room."
                         )
 
                         PremiumFeature(
@@ -241,12 +245,12 @@ struct PremiumView: View {
 
                         PremiumFeature(
                             icon: "star",
-                            title: "Favorite Apps & Inputs",
-                            detail: "Pin the apps and inputs you use most to the top of their lists."
+                            title: "Favorites",
+                            detail: "Keep favorite apps and inputs one tap away."
                         )
                     }
 
-                    Text("The full essential remote stays available on Free.")
+                    Text("The complete remote stays available on Free.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -259,11 +263,15 @@ struct PremiumView: View {
 
                         planRow(
                             id: PurchaseManager.monthlyID,
-                            badge: "Best value"
+                            badge: "Great Value"
                         )
                     }
 
-                    Button("Continue") {
+                    Button(
+                        selectedID == PurchaseManager.monthlyID
+                        ? "Continue with Monthly"
+                        : "Continue with Weekly"
+                    ) {
                         guard let product = appModel.purchases.product(id: selectedID) else {
                             return
                         }
@@ -286,6 +294,10 @@ struct PremiumView: View {
                         }
                     }
 
+                    Text("Cancel anytime • Managed through Apple")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     if appModel.purchases.isLoading &&
                         appModel.purchases.products.isEmpty {
                         ProgressView("Loading plans…")
@@ -293,7 +305,7 @@ struct PremiumView: View {
                     }
 
                     if appModel.purchases.purchasePending {
-                        Text("Purchase pending approval. Premium will activate automatically when Apple completes it.")
+                        Text("Purchase pending approval. Orbit Pro will activate automatically when Apple completes it.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -500,7 +512,7 @@ struct TermsOfServiceView: View {
                     ),
                     (
                         "6. Contact",
-                        "Controller: [Your Name / Company]\nContact: [email]"
+                        "Controller: the Orbit developer identified on the App Store product page.\nSupport: use the contact method listed on Orbit’s App Store product page."
                     )
                 ]
             )

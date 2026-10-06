@@ -76,6 +76,57 @@ final class DeviceStore {
         persist()
     }
 
+    func setRoomName(
+        for deviceID: String,
+        to roomName: String?
+    ) {
+        guard let index = devices.firstIndex(
+            where: { $0.id == deviceID }
+        ) else {
+            return
+        }
+
+        let trimmed = roomName?
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+
+        devices[index].roomName =
+            (trimmed?.isEmpty == false)
+            ? trimmed
+            : nil
+        persist()
+    }
+
+    func matchesStoredDevice(
+        _ incoming: TVDevice,
+        id storedID: String
+    ) -> Bool {
+        guard let saved = devices.first(
+            where: { $0.id == storedID }
+        ),
+        saved.platform == incoming.platform else {
+            return false
+        }
+
+        if saved.id == incoming.id {
+            return true
+        }
+
+        let savedAliases =
+            saved.discoveryAliases.union(
+                [saved.id]
+            )
+        let incomingAliases =
+            incoming.discoveryAliases.union(
+                [incoming.id]
+            )
+
+        return !savedAliases.isDisjoint(
+            with: incomingAliases
+        )
+    }
+
     func reconcile(oldDeviceID: String, with resolvedDevice: TVDevice) {
         guard let oldIndex = devices.firstIndex(where: { $0.id == oldDeviceID }) else {
             addOrUpdate(resolvedDevice)
@@ -1589,7 +1640,12 @@ final class AppModel {
         }
     }
 
-    func select(_ device: TVDevice) {
+    @discardableResult
+    func select(_ device: TVDevice) -> Bool {
+        guard canAddOrUse(device) else {
+            return false
+        }
+
         connectTask?.cancel()
         reconnectTask?.cancel()
         eventTask?.cancel()
@@ -1631,6 +1687,25 @@ final class AppModel {
 
             self.connect()
         }
+
+        return true
+    }
+
+    func canAddOrUse(_ device: TVDevice) -> Bool {
+        if purchases.isPremium {
+            return true
+        }
+
+        guard let freeID = UserDefaults.standard.string(
+            forKey: AppSettings.Keys.freeDeviceID
+        ) else {
+            return true
+        }
+
+        return deviceStore.matchesStoredDevice(
+            device,
+            id: freeID
+        )
     }
 
     func canUse(_ device: TVDevice) -> Bool {

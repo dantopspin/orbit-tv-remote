@@ -409,6 +409,82 @@ final class DeviceStoreTests: XCTestCase {
         )
     }
 
+    func testRoomNameCanBeAssignedAndCleared() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+        let device = TVDevice(
+            id: "room-tv",
+            name: "TV",
+            platform: .samsung,
+            host: "192.168.1.60"
+        )
+
+        store.addOrUpdate(device)
+        store.setRoomName(
+            for: device.id,
+            to: " Living Room "
+        )
+
+        XCTAssertEqual(
+            store.selectedDevice?.roomName,
+            "Living Room"
+        )
+
+        store.setRoomName(
+            for: device.id,
+            to: "   "
+        )
+
+        XCTAssertNil(
+            store.selectedDevice?.roomName
+        )
+    }
+
+    func testStoredIdentityMatchesDiscoveryAliasButNotAnotherTV() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+        let saved = TVDevice(
+            id: "samsung-runtime-free",
+            name: "Living Room",
+            platform: .samsung,
+            host: "192.168.1.21",
+            discoveryIDs: [
+                "samsung-uuid-free"
+            ]
+        )
+        store.addOrUpdate(saved)
+
+        let sameTV = TVDevice(
+            id: "samsung-uuid-free",
+            name: "Samsung TV",
+            platform: .samsung,
+            host: "192.168.1.88"
+        )
+        let otherTV = TVDevice(
+            id: "samsung-uuid-other",
+            name: "Samsung TV",
+            platform: .samsung,
+            host: "192.168.1.21"
+        )
+
+        XCTAssertTrue(
+            store.matchesStoredDevice(
+                sameTV,
+                id: saved.id
+            )
+        )
+        XCTAssertFalse(
+            store.matchesStoredDevice(
+                otherTV,
+                id: saved.id
+            )
+        )
+    }
+
     func testRemovingFreeDevicePromotesNextSavedTV() {
         clearDeviceDefaults()
         defer { clearDeviceDefaults() }

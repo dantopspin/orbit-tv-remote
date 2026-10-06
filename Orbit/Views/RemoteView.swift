@@ -785,6 +785,7 @@ struct AppsInputsView: View {
     @State private var apps: [TVApp] = []
     @State private var inputs: [TVInput] = []
     @State private var isLoading = true
+    @State private var showPro = false
 
     init(initialSelection: Int = 0) {
         _selection = State(initialValue: initialSelection)
@@ -826,6 +827,9 @@ struct AppsInputsView: View {
                 inputs = await loadedInputs
                 isLoading = false
             }
+        }
+        .sheet(isPresented: $showPro) {
+            PremiumView()
         }
         .presentationDetents([.medium, .large])
     }
@@ -894,36 +898,49 @@ struct AppsInputsView: View {
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                        if appModel.purchases.isPremium,
-                           let currentDeviceID {
+                        if let currentDeviceID {
                             Button {
-                                appModel.favorites.toggle(
-                                    deviceID: currentDeviceID,
-                                    favorite: RemoteFavorite(
-                                        kind: .app,
-                                        targetID: app.id,
-                                        name: app.name
+                                if appModel.purchases.isPremium {
+                                    appModel.favorites.toggle(
+                                        deviceID: currentDeviceID,
+                                        favorite: RemoteFavorite(
+                                            kind: .app,
+                                            targetID: app.id,
+                                            name: app.name
+                                        )
                                     )
-                                )
-                                Haptics.shared.selection()
+                                    Haptics.shared.selection()
+                                } else {
+                                    showPro = true
+                                }
                             } label: {
                                 Image(
-                                    systemName: appModel.favorites.contains(
-                                        deviceID: currentDeviceID,
-                                        kind: .app,
-                                        targetID: app.id
-                                    ) ? "star.fill" : "star"
+                                    systemName:
+                                        appModel.purchases.isPremium &&
+                                        appModel.favorites.contains(
+                                            deviceID: currentDeviceID,
+                                            kind: .app,
+                                            targetID: app.id
+                                        )
+                                        ? "star.fill"
+                                        : "star"
                                 )
                                 .frame(width: 36, height: 36)
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(.primary)
                             .accessibilityLabel(
-                                appModel.favorites.contains(
-                                    deviceID: currentDeviceID,
-                                    kind: .app,
-                                    targetID: app.id
-                                ) ? "Remove \(app.name) from favorites" : "Add \(app.name) to favorites"
+                                appModel.purchases.isPremium
+                                ? (
+                                    appModel.favorites.contains(
+                                        deviceID: currentDeviceID,
+                                        kind: .app,
+                                        targetID: app.id
+                                    )
+                                    ? "Remove \(app.name) from favorites"
+                                    : "Add \(app.name) to favorites"
+                                )
+                                : "Add \(app.name) to favorites with Orbit Pro"
                             )
                         }
                     }
@@ -969,36 +986,49 @@ struct AppsInputsView: View {
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                        if appModel.purchases.isPremium,
-                           let currentDeviceID {
+                        if let currentDeviceID {
                             Button {
-                                appModel.favorites.toggle(
-                                    deviceID: currentDeviceID,
-                                    favorite: RemoteFavorite(
-                                        kind: .input,
-                                        targetID: input.id,
-                                        name: input.name
+                                if appModel.purchases.isPremium {
+                                    appModel.favorites.toggle(
+                                        deviceID: currentDeviceID,
+                                        favorite: RemoteFavorite(
+                                            kind: .input,
+                                            targetID: input.id,
+                                            name: input.name
+                                        )
                                     )
-                                )
-                                Haptics.shared.selection()
+                                    Haptics.shared.selection()
+                                } else {
+                                    showPro = true
+                                }
                             } label: {
                                 Image(
-                                    systemName: appModel.favorites.contains(
-                                        deviceID: currentDeviceID,
-                                        kind: .input,
-                                        targetID: input.id
-                                    ) ? "star.fill" : "star"
+                                    systemName:
+                                        appModel.purchases.isPremium &&
+                                        appModel.favorites.contains(
+                                            deviceID: currentDeviceID,
+                                            kind: .input,
+                                            targetID: input.id
+                                        )
+                                        ? "star.fill"
+                                        : "star"
                                 )
                                 .frame(width: 36, height: 36)
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(.primary)
                             .accessibilityLabel(
-                                appModel.favorites.contains(
-                                    deviceID: currentDeviceID,
-                                    kind: .input,
-                                    targetID: input.id
-                                ) ? "Remove \(input.name) from favorites" : "Add \(input.name) to favorites"
+                                appModel.purchases.isPremium
+                                ? (
+                                    appModel.favorites.contains(
+                                        deviceID: currentDeviceID,
+                                        kind: .input,
+                                        targetID: input.id
+                                    )
+                                    ? "Remove \(input.name) from favorites"
+                                    : "Add \(input.name) to favorites"
+                                )
+                                : "Add \(input.name) to favorites with Orbit Pro"
                             )
                         }
                     }
