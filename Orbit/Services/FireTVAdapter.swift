@@ -297,14 +297,13 @@ final class FireTVAdapter: NSObject, TVControlling {
             withJSONObject: ["text": text]
         )
 
-        try await requireSuccess(
-            request(
-                path: "/v1/FireTV/keyboard",
-                method: "POST",
-                body: body,
-                token: token
-            )
+        let result = try await request(
+            path: "/v1/FireTV/keyboard",
+            method: "POST",
+            body: body,
+            token: token
         )
+        try requireSuccess(result)
     }
 
     func apps() async throws -> [TVApp] {
@@ -348,14 +347,13 @@ final class FireTVAdapter: NSObject, TVControlling {
             throw TVControlError.unsupported
         }
 
-        try await requireSuccess(
-            request(
-                path: "/v1/FireTV/app/\(encoded)",
-                method: "POST",
-                body: nil,
-                token: token
-            )
+        let result = try await request(
+            path: "/v1/FireTV/app/\(encoded)",
+            method: "POST",
+            body: nil,
+            token: token
         )
+        try requireSuccess(result)
     }
 
     func select(
@@ -506,20 +504,19 @@ final class FireTVAdapter: NSObject, TVControlling {
             )
         }
 
-        try await requireSuccess(
-            request(
-                path: "/v1/FireTV",
-                method: "POST",
-                queryItems: [
-                    URLQueryItem(
-                        name: "action",
-                        value: action
-                    )
-                ],
-                body: body,
-                token: token
-            )
+        let result = try await request(
+            path: "/v1/FireTV",
+            method: "POST",
+            queryItems: [
+                URLQueryItem(
+                    name: "action",
+                    value: action
+                )
+            ],
+            body: body,
+            token: token
         )
+        try requireSuccess(result)
     }
 
     private func media(
@@ -543,15 +540,14 @@ final class FireTVAdapter: NSObject, TVControlling {
             )
         }
 
-        try await requireSuccess(
-            request(
-                path: "/v1/media",
-                method: "POST",
-                queryItems: queryItems,
-                body: nil,
-                token: token
-            )
+        let result = try await request(
+            path: "/v1/media",
+            method: "POST",
+            queryItems: queryItems,
+            body: nil,
+            token: token
         )
+        try requireSuccess(result)
     }
 
     private func navigationAction(
@@ -643,10 +639,8 @@ final class FireTVAdapter: NSObject, TVControlling {
     }
 
     private func requireSuccess(
-        _ operation: @autoclosure () async throws -> FireHTTPResult
-    ) async throws {
-        let result = try await operation()
-
+        _ result: FireHTTPResult
+    ) throws {
         guard (200..<300).contains(
             result.response.statusCode
         ) else {
