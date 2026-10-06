@@ -20,6 +20,21 @@ final class RokuAdapter: NSObject, TVControlling {
         self.session = session ?? Self.localSession
     }
 
+    func identify() async throws -> TVDevice {
+        let data = try await get(
+            "query/device-info"
+        )
+        let info = try RokuDeviceInfoParser(
+            data: data
+        ).parse()
+
+        guard info.looksLikeRoku else {
+            throw TVControlError.invalidResponse
+        }
+
+        return resolvedDevice(from: info)
+    }
+
     func connect() async throws -> TVConnectionInfo {
         let data = try await get("query/device-info")
         let info = try RokuDeviceInfoParser(data: data).parse()
