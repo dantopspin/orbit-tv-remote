@@ -24,3 +24,13 @@ jobs:
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
           build
+
+      - name: Run Orbit unit tests
+        run: >
+          xcodebuild
+          -project Orbit.xcodeproj
+          -scheme Orbit
+          -configuration Debug
+          -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest'
+          CODE_SIGNING_ALLOWED=NO
+          test

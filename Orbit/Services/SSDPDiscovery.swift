@@ -39,6 +39,87 @@ struct SSDPResponse: Hashable, Sendable {
 
         return nil
     }
+
+    var canonicalUSN: String? {
+        guard let usn else { return nil }
+
+        let trimmed = usn.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+
+        if let separator = trimmed.range(of: "::") {
+            return String(trimmed[..<separator.lowerBound])
+                .lowercased()
+        }
+
+        return trimmed.lowercased()
+    }
+
+    var deduplicationKey: String {
+        canonicalUSN ?? location.absoluteString.lowercased()
+    }
+
+    static func parse(data: Data) -> SSDPResponse? {
+        guard let text = String(
+            data: data,
+            encoding: .utf8
+        ) else {
+            return nil
+        }
+
+        var headers: [String: String] = [:]
+
+        for rawLine in text.components(
+            separatedBy: .newlines
+        ) {
+            let line = rawLine.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+
+            guard let separator = line.firstIndex(
+                of: ":"
+            ) else {
+                continue
+            }
+
+            let name = String(line[..<separator])
+                .trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+                .lowercased()
+
+            let valueStart = line.index(
+                after: separator
+            )
+            let value = String(line[valueStart...])
+                .trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+
+            if !name.isEmpty,
+               !value.isEmpty {
+                headers[name] = value
+            }
+        }
+
+        guard let locationString = headers["location"],
+              let location = URL(
+                  string: locationString
+              ) else {
+            return nil
+        }
+
+        return SSDPResponse(
+            location: location,
+            usn: headers["usn"],
+            searchTarget: headers["st"],
+            server: headers["server"]
+        )
+    }
 }
 
 enum SSDPScanner {
@@ -141,9 +222,12 @@ enum SSDPScanner {
             if received > 0 {
                 let data = Data(buffer.prefix(received))
 
-                if let response = parse(data: data) {
-                    let key = response.usn ?? response.location.absoluteString
-                    responses[key] = response
+                if let response = SSDPResponse.parse(
+                    data: data
+                ) {
+                    responses[
+                        response.deduplicationKey
+                    ] = response
                 }
 
                 continue
@@ -159,40 +243,4 @@ enum SSDPScanner {
         return Array(responses.values)
     }
 
-    private static func parse(data: Data) -> SSDPResponse? {
-        guard let text = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-
-        var headers: [String: String] = [:]
-
-        for rawLine in text.components(separatedBy: .newlines) {
-            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let separator = line.firstIndex(of: ":") else { continue }
-
-            let name = String(line[..<separator])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased()
-
-            let valueStart = line.index(after: separator)
-            let value = String(line[valueStart...])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            if !name.isEmpty, !value.isEmpty {
-                headers[name] = value
-            }
-        }
-
-        guard let locationString = headers["location"],
-              let location = URL(string: locationString) else {
-            return nil
-        }
-
-        return SSDPResponse(
-            location: location,
-            usn: headers["usn"],
-            searchTarget: headers["st"],
-            server: headers["server"]
-        )
-    }
 }
