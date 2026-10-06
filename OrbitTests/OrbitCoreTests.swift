@@ -558,11 +558,20 @@ final class TVAdapterEventEmitterTests: XCTestCase {
         firstTask.cancel()
         _ = await firstTask.result
 
+        let received =
+            expectation(
+                description:
+                    "fresh event stream receives event"
+            )
+        var capturedEvent: TVAdapterEvent?
+
         let secondStream = emitter.stream
-        let receiveTask = Task<TVAdapterEvent?, Never> {
-            var iterator =
-                secondStream.makeAsyncIterator()
-            return await iterator.next()
+        let receiveTask = Task { @MainActor in
+            for await event in secondStream {
+                capturedEvent = event
+                received.fulfill()
+                return
+            }
         }
 
         await Task.yield()
@@ -573,10 +582,14 @@ final class TVAdapterEventEmitterTests: XCTestCase {
             )
         )
 
-        let event = await receiveTask.value
+        await fulfillment(
+            of: [received],
+            timeout: 1.0
+        )
+        receiveTask.cancel()
 
         XCTAssertEqual(
-            event,
+            capturedEvent,
             .disconnected(
                 message: "second connection"
             )
