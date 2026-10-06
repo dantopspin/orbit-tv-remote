@@ -2,11 +2,19 @@ import Foundation
 
 final class RokuAdapter: NSObject, TVControlling {
     let device: TVDevice
+    private static let localSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 2.5
+        configuration.timeoutIntervalForResource = 4.0
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration)
+    }()
+
     private let session: URLSession
 
-    init(device: TVDevice, session: URLSession = .shared) {
+    init(device: TVDevice, session: URLSession? = nil) {
         self.device = device
-        self.session = session
+        self.session = session ?? Self.localSession
     }
 
     func probe() async -> Bool {

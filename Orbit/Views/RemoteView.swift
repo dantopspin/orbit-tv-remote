@@ -321,19 +321,6 @@ struct RemoteView: View {
         .sheet(isPresented: $showAppsInputs) {
             AppsInputsView()
         }
-        .alert(
-            "TV unavailable",
-            isPresented: Binding(
-                get: { appModel.lastControlError != nil },
-                set: { if !$0 { appModel.lastControlError = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {
-                appModel.lastControlError = nil
-            }
-        } message: {
-            Text(appModel.lastControlError ?? "")
-        }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
         }

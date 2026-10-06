@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppSettings.Keys.onboardingCompleted) private var onboardingCompleted = false
 
     var body: some View {
@@ -16,7 +17,14 @@ struct RootView: View {
         }
         .background(Color.orbitBackground.ignoresSafeArea())
         .task {
-            if onboardingCompleted, appModel.currentDevice != nil { appModel.connect() }
+            if onboardingCompleted, appModel.currentDevice != nil {
+                appModel.connect()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active, onboardingCompleted {
+                appModel.appDidBecomeActive()
+            }
         }
     }
 }

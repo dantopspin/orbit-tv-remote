@@ -281,6 +281,63 @@ final class PurchaseManager {
 }
 
 @MainActor
+private final class RemoteCommandQueue {
+    private var tail: Task<Void, Never>?
+
+    func enqueue(_ operation: @escaping @MainActor () async -> Void) {
+        let previous = tail
+
+        let next = Task { @MainActor in
+            if let previous {
+                await previous.value
+            }
+
+            guard !Task.isCancelled else { return }
+            await operation()
+        }
+
+        tail = next
+    }
+
+    func enqueueAndWait(_ operation: @escaping @MainActor () async throws -> Void) async throws {
+        let previous = tail
+
+        let resultTask = Task { @MainActor () -> Result<Void, Error> in
+            if let previous {
+                await previous.value
+            }
+
+            guard !Task.isCancelled else {
+                return .failure(CancellationError())
+            }
+
+            do {
+                try await operation()
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }
+
+        tail = Task { @MainActor in
+            _ = await resultTask.value
+        }
+
+        switch await resultTask.value {
+        case .success:
+            return
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func cancel() {
+        tail?.cancel()
+        tail = nil
+    }
+}
+
+@MainActor
 @Observable
 final class AppModel {
     var connectionState: TVConnectionState = .connecting
@@ -291,18 +348,26 @@ final class AppModel {
     let purchases = PurchaseManager()
 
     @ObservationIgnored private var adapter: TVControlling?
+    @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private let commandQueue = RemoteCommandQueue()
 
     var currentDevice: TVDevice? {
         deviceStore.selectedDevice
     }
 
     func select(_ device: TVDevice) {
+        connectTask?.cancel()
+        commandQueue.cancel()
+
         deviceStore.addOrUpdate(device)
         adapter = TVAdapterFactory.makeAdapter(for: device)
+        lastControlError = nil
         connect()
     }
 
     func connect() {
+        connectTask?.cancel()
+
         guard let device = currentDevice else {
             adapter = nil
             connectionState = .connecting
@@ -310,39 +375,87 @@ final class AppModel {
         }
 
         if adapter?.device.id != device.id {
+            commandQueue.cancel()
             adapter = TVAdapterFactory.makeAdapter(for: device)
         }
 
         guard let adapter else { return }
-        connectionState = .connecting
 
-        Task {
+        let deviceID = device.id
+        connectionState = .connecting
+        lastControlError = nil
+
+        connectTask = Task { @MainActor [weak self, adapter] in
             let reachable = await adapter.probe()
-            connectionState = reachable ? .connected : .unavailable
+
+            guard !Task.isCancelled,
+                  let self,
+                  self.currentDevice?.id == deviceID else {
+                return
+            }
+
+            self.connectionState = reachable ? .connected : .unavailable
+            if !reachable {
+                self.lastControlError = TVControlError.unreachable.localizedDescription
+            }
         }
+    }
+
+    func appDidBecomeActive() {
+        guard currentDevice != nil else { return }
+        connect()
     }
 
     func send(_ command: RemoteCommand) {
         guard let adapter else { return }
 
         Haptics.shared.tap()
+        let deviceID = adapter.device.id
 
-        Task {
+        commandQueue.enqueue { [weak self, adapter] in
+            guard let self,
+                  self.currentDevice?.id == deviceID else {
+                return
+            }
+
             do {
                 try await adapter.send(command)
-                if connectionState != .connected {
-                    connectionState = .connected
-                }
+
+                guard self.currentDevice?.id == deviceID else { return }
+
+                self.lastControlError = nil
+                self.connectionState = .connected
+            } catch is CancellationError {
+                return
             } catch {
-                lastControlError = error.localizedDescription
-                connectionState = .unavailable
+                guard self.currentDevice?.id == deviceID else { return }
+
+                self.lastControlError = error.localizedDescription
+                self.connectionState = .unavailable
             }
         }
     }
 
     func send(text: String) async throws {
         guard let adapter else { throw TVControlError.unreachable }
-        try await adapter.send(text: text)
+
+        let deviceID = adapter.device.id
+
+        try await commandQueue.enqueueAndWait { [weak self, adapter] in
+            guard let self,
+                  self.currentDevice?.id == deviceID else {
+                throw CancellationError()
+            }
+
+            try await adapter.send(text: text)
+
+            guard self.currentDevice?.id == deviceID else {
+                throw CancellationError()
+            }
+
+            self.lastControlError = nil
+            self.connectionState = .connected
+        }
     }
 
     func apps() async -> [TVApp] {
@@ -356,16 +469,44 @@ final class AppModel {
     }
 
     func launch(_ app: TVApp) async {
-        try? await adapter?.launch(app: app)
+        guard let adapter else { return }
+
+        do {
+            try await commandQueue.enqueueAndWait {
+                try await adapter.launch(app: app)
+            }
+            lastControlError = nil
+            connectionState = .connected
+        } catch is CancellationError {
+            return
+        } catch {
+            lastControlError = error.localizedDescription
+            connectionState = .unavailable
+        }
     }
 
     func select(_ input: TVInput) async {
-        try? await adapter?.select(input: input)
+        guard let adapter else { return }
+
+        do {
+            try await commandQueue.enqueueAndWait {
+                try await adapter.select(input: input)
+            }
+            lastControlError = nil
+            connectionState = .connected
+        } catch is CancellationError {
+            return
+        } catch {
+            lastControlError = error.localizedDescription
+            connectionState = .unavailable
+        }
     }
 
     func forgetCurrentDevice() {
         guard let device = currentDevice else { return }
 
+        connectTask?.cancel()
+        commandQueue.cancel()
         deviceStore.remove(device)
         adapter = nil
 
@@ -373,11 +514,15 @@ final class AppModel {
             refreshSelection()
         } else {
             connectionState = .connecting
+            lastControlError = nil
         }
     }
 
     func refreshSelection() {
+        connectTask?.cancel()
+        commandQueue.cancel()
         adapter = currentDevice.map(TVAdapterFactory.makeAdapter)
+        lastControlError = nil
 
         if currentDevice != nil {
             connect()
