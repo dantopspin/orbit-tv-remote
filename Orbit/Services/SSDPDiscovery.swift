@@ -49,7 +49,7 @@ enum SSDPScanner {
     private static func scanBlocking(timeout: TimeInterval) -> [SSDPResponse] {
         let socketFD = Darwin.socket(
             AF_INET,
-            Int32(SOCK_DGRAM.rawValue),
+            SOCK_DGRAM,
             IPPROTO_UDP
         )
 
