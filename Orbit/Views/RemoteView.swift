@@ -238,7 +238,7 @@ struct RemoteView: View {
                 }
 
                 Picker("Remote mode", selection: $mode) {
-                    ForEach(RemoteMode.allCases, id: .self) {
+                    ForEach(RemoteMode.allCases, id: \.self) {
                         Text($0.rawValue).tag($0)
                     }
                 }
@@ -390,7 +390,7 @@ struct RemoteView: View {
 
 struct KeyboardSheet: View {
     @EnvironmentObject private var appModel: AppModel
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
 
     @State private var text = ""
     @State private var errorMessage: String?
@@ -463,7 +463,7 @@ struct KeyboardSheet: View {
 
 struct AppsInputsView: View {
     @EnvironmentObject private var appModel: AppModel
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
 
     @State private var selection = 0
     @State private var apps: [TVApp] = []
@@ -531,7 +531,7 @@ struct AppsInputsView: View {
 
 struct MoreMenuSheet: View {
     @EnvironmentObject private var appModel: AppModel
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
 
     @State private var showDevices = false
     @State private var showSettings = false

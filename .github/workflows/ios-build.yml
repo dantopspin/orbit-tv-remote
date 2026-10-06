@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - build/**
+      - "build/**"
   pull_request:
 
 jobs:
@@ -15,5 +15,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Orbit
-        run: |
-          xcodebuild             -project Orbit.xcodeproj             -scheme Orbit             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             CODE_SIGNING_ALLOWED=NO             build
+        run: >
+          xcodebuild
+          -project Orbit.xcodeproj
+          -scheme Orbit
+          -configuration Debug
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build

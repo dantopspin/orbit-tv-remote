@@ -3,7 +3,7 @@ import StoreKit
 
 struct SettingsView: View {
     @EnvironmentObject private var appModel: AppModel
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
 
     @AppStorage(AppSettings.Keys.hapticsEnabled) private var hapticsEnabled = true
     @AppStorage(AppSettings.Keys.keepScreenAwake) private var keepScreenAwake = true
@@ -99,7 +99,7 @@ private struct FAQView: View {
 
 struct PremiumView: View {
     @EnvironmentObject private var appModel: AppModel
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
     @State private var selectedID = PurchaseManager.monthlyID
 
     var body: some View {
@@ -369,7 +369,7 @@ private struct LegalDocument: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            ForEach(Array(sections.enumerated()), id: .offset) { _, section in
+            ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
                 VStack(alignment: .leading, spacing: 7) {
                     Text(section.0)
                         .font(.headline)

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DiscoveryView: View {
     @EnvironmentObject private var appModel: AppModel
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var discovery = DiscoveryService()
     @State private var showManualAddress = false
     @State private var manualAddress = ""
@@ -125,7 +125,7 @@ struct DiscoveryView: View {
 
 struct DevicesView: View {
     @EnvironmentObject private var appModel: AppModel
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
     @State private var showAddTV = false
     @State private var showPremium = false
 

@@ -17,7 +17,7 @@ struct OnboardingFlowView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
 
             HStack(spacing: 7) {
-                ForEach(0..<count, id: .self) { index in
+                ForEach(0..<count, id: \.self) { index in
                     Circle()
                         .fill(index == page ? Color.primary : Color.secondary.opacity(0.25))
                         .frame(width: 6, height: 6)
