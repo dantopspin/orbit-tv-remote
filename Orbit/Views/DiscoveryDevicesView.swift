@@ -153,7 +153,7 @@ struct DevicesView: View {
         NavigationStack {
             List {
                 Section("Your TVs") {
-                    ForEach(appModel.deviceStore.devices) { device in
+                    ForEach(appModel.deviceStore.availableDevices) { device in
                         Button {
                             if appModel.activate(device) {
                                 dismiss()
@@ -187,7 +187,7 @@ struct DevicesView: View {
 
                 Section {
                     Button {
-                        if appModel.purchases.isPremium || appModel.deviceStore.devices.isEmpty {
+                        if appModel.purchases.isPremium || appModel.deviceStore.availableDevices.isEmpty {
                             showAddTV = true
                         } else {
                             showPremium = true

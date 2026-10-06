@@ -16,6 +16,27 @@ final class DeviceStore {
         devices.first { $0.id == selectedDeviceID }
     }
 
+    var availableDevices: [TVDevice] {
+        devices.filter {
+            TVPlatformAvailability.isEnabled(
+                $0.platform
+            )
+        }
+    }
+
+    func ensureAvailableSelection() {
+        if let selectedDevice,
+           TVPlatformAvailability.isEnabled(
+               selectedDevice.platform
+           ) {
+            return
+        }
+
+        selectedDeviceID =
+            availableDevices.first?.id
+        persist()
+    }
+
     @discardableResult
     func addOrUpdate(_ device: TVDevice) -> TVDevice {
         if let index = matchingIndex(for: device) {
@@ -1122,6 +1143,14 @@ final class PurchaseManager {
         products.first { $0.id == id }
     }
 
+    func refreshForForeground() async {
+        if products.isEmpty {
+            await refresh()
+        } else {
+            await refreshEntitlements()
+        }
+    }
+
     func refreshEntitlements() async {
         var active = false
         let now = Date()
@@ -1455,15 +1484,38 @@ final class AppModel {
 
     init() {
         KeychainStore.prepareForCurrentInstall()
+        deviceStore.ensureAvailableSelection()
 
-        if UserDefaults.standard.string(
-            forKey: AppSettings.Keys.freeDeviceID
-        ) == nil,
-        let selectedID = deviceStore.selectedDeviceID {
-            UserDefaults.standard.set(
-                selectedID,
-                forKey: AppSettings.Keys.freeDeviceID
+        let storedFreeID =
+            UserDefaults.standard.string(
+                forKey:
+                    AppSettings.Keys.freeDeviceID
             )
+        let storedFreeDevice =
+            deviceStore.devices.first {
+                $0.id == storedFreeID
+            }
+
+        if storedFreeID == nil ||
+            storedFreeDevice == nil ||
+            storedFreeDevice.map({
+                !TVPlatformAvailability.isEnabled(
+                    $0.platform
+                )
+            }) == true {
+            if let selectedID =
+                    deviceStore.selectedDeviceID {
+                UserDefaults.standard.set(
+                    selectedID,
+                    forKey:
+                        AppSettings.Keys.freeDeviceID
+                )
+            } else {
+                UserDefaults.standard.removeObject(
+                    forKey:
+                        AppSettings.Keys.freeDeviceID
+                )
+            }
         }
 
         discovery.onDevicesUpdated = {
@@ -1682,7 +1734,7 @@ final class AppModel {
 
     func appDidBecomeActive() {
         Task { @MainActor [weak self] in
-            await self?.purchases.refreshEntitlements()
+            await self?.purchases.refreshForForeground()
         }
 
         guard currentDevice != nil else {
