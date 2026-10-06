@@ -236,6 +236,16 @@ struct RemoteView: View {
             VStack(spacing: 14) {
                 header
 
+                if let message = appModel.connectionMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity)
+                        .transition(.opacity)
+                }
+
                 HStack {
                     RoundRemoteButton(
                         systemName: "power",

@@ -637,6 +637,24 @@ final class AppModel {
         deviceStore.selectedDevice
     }
 
+    var connectionMessage: String? {
+        switch connectionState {
+        case .connecting:
+            switch currentDevice?.platform {
+            case .samsung, .lgWebOS:
+                return "Approve Orbit on your TV if asked."
+            default:
+                return nil
+            }
+
+        case .unavailable:
+            return lastControlError
+
+        case .connected, .off:
+            return nil
+        }
+    }
+
     func select(_ device: TVDevice) {
         connectTask?.cancel()
         commandQueue.cancel()

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct DiscoveryView: View {
     @Environment(AppModel.self) private var appModel
@@ -30,13 +31,20 @@ struct DiscoveryView: View {
                     ContentUnavailableView {
                         Label("No TVs found", systemImage: "tv")
                     } description: {
-                        Text("Automatic discovery is being added protocol by protocol. You can connect by local IP while we finish discovery.")
+                        Text("Make sure Local Network access is enabled. You can also connect by local IP while we finish discovery.")
                     } actions: {
                         Button("Scan Again") {
                             appModel.discovery.startScan()
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.primary)
+
+                        Button("Open Settings") {
+                            guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                                return
+                            }
+                            UIApplication.shared.open(url)
+                        }
                     }
                 } else {
                     List(appModel.discovery.devices) { device in
@@ -89,6 +97,14 @@ struct DiscoveryView: View {
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
 
+                            if appModel.discovery.isSearching {
+                                HStack(spacing: 10) {
+                                    ProgressView()
+                                    Text("Connecting… Check your TV if asked.")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
                             if let error = appModel.discovery.lastError {
                                 Text(error)
                                     .foregroundStyle(.secondary)
@@ -114,6 +130,10 @@ struct DiscoveryView: View {
                                     }
                                 }
                             }
+                            .disabled(
+                                appModel.discovery.isSearching ||
+                                manualAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            )
                         }
                     }
                 }
