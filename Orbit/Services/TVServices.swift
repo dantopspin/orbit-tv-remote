@@ -84,7 +84,7 @@ final class DeviceStore {
     func remove(_ device: TVDevice) {
         devices.removeAll { $0.id == device.id }
         if selectedDeviceID == device.id { selectedDeviceID = devices.first?.id }
-        KeychainStore.remove("pairing.\(device.id)")
+        PairingCredentialStore.remove(platform: device.platform, deviceID: device.id)
         persist()
     }
 
@@ -455,6 +455,10 @@ final class AppModel {
     @ObservationIgnored private var adapter: TVControlling?
     @ObservationIgnored private var connectTask: Task<Void, Never>?
     @ObservationIgnored private let commandQueue = RemoteCommandQueue()
+
+    init() {
+        KeychainStore.prepareForCurrentInstall()
+    }
 
     var currentDevice: TVDevice? {
         deviceStore.selectedDevice
