@@ -78,6 +78,15 @@ final class DeviceStore {
             selectedDeviceID = merged.id
         }
 
+        if UserDefaults.standard.string(
+            forKey: AppSettings.Keys.freeDeviceID
+        ) == oldDeviceID {
+            UserDefaults.standard.set(
+                merged.id,
+                forKey: AppSettings.Keys.freeDeviceID
+            )
+        }
+
         persist()
     }
 
@@ -153,6 +162,7 @@ enum TVControlError: LocalizedError {
     case unsupported
     case unreachable
     case permissionDenied(String)
+    case rejected(status: Int?, message: String?)
     case invalidResponse
 
     var errorDescription: String? {
@@ -163,8 +173,35 @@ enum TVControlError: LocalizedError {
             return "The TV could not be reached on your local network."
         case .permissionDenied(let message):
             return message
+        case .rejected(_, let message):
+            return message ?? "The TV rejected that command."
         case .invalidResponse:
             return "The TV returned an unexpected response."
+        }
+    }
+
+    var affectsConnectionState: Bool {
+        switch self {
+        case .unreachable:
+            return true
+        case .unsupported, .permissionDenied, .rejected, .invalidResponse:
+            return false
+        }
+    }
+}
+
+enum TVPlatformAvailability {
+    static func isEnabled(_ platform: TVPlatform) -> Bool {
+        switch platform {
+        case .roku, .fireTV:
+            #if DEBUG
+            return true
+            #else
+            return false
+            #endif
+
+        default:
+            return true
         }
     }
 }
@@ -172,6 +209,10 @@ enum TVControlError: LocalizedError {
 @MainActor
 enum TVAdapterFactory {
     static func makeAdapter(for device: TVDevice) -> TVControlling {
+        guard TVPlatformAvailability.isEnabled(device.platform) else {
+            return UnsupportedTVAdapter(device: device)
+        }
+
         switch device.platform {
         case .roku:
             return RokuAdapter(device: device)
@@ -237,11 +278,15 @@ final class DiscoveryService {
             var discovered: [String: TVDevice] = [:]
 
             for response in responses {
-                guard let device = self.device(from: response) else { continue }
+                guard let device = self.device(from: response),
+                      TVPlatformAvailability.isEnabled(device.platform) else {
+                    continue
+                }
                 discovered[device.id] = device
             }
 
-            for device in androidDevices {
+            for device in androidDevices
+            where TVPlatformAvailability.isEnabled(device.platform) {
                 discovered[device.id] = device
             }
 
@@ -307,34 +352,36 @@ final class DiscoveryService {
             return androidCandidate
         }
 
-        let fireCandidate = TVDevice(
-            id: "firetv-\(trimmed)",
-            name: "Fire TV",
-            platform: .fireTV,
-            host: trimmed,
-            port: 8080,
-            capabilities: [
-                .directionalNavigation,
-                .touchpad,
-                .keyboard,
-                .power,
-                .volume,
-                .mute,
-                .appLaunching,
-                .playback
-            ]
-        )
+        if TVPlatformAvailability.isEnabled(.fireTV) {
+            let fireCandidate = TVDevice(
+                id: "firetv-\(trimmed)",
+                name: "Fire TV",
+                platform: .fireTV,
+                host: trimmed,
+                port: 8080,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .appLaunching,
+                    .playback
+                ]
+            )
 
-        let fireTV = FireTVAdapter(
-            device: fireCandidate
-        )
+            let fireTV = FireTVAdapter(
+                device: fireCandidate
+            )
 
-        if await fireTV.probeWakeEndpoint() {
-            devices.removeAll {
-                $0.id == fireCandidate.id
+            if await fireTV.probeWakeEndpoint() {
+                devices.removeAll {
+                    $0.id == fireCandidate.id
+                }
+                devices.append(fireCandidate)
+                return fireCandidate
             }
-            devices.append(fireCandidate)
-            return fireCandidate
         }
 
         let samsungCandidate = TVDevice(
@@ -385,27 +432,31 @@ final class DiscoveryService {
             await lg.disconnect()
         }
 
-        let rokuCandidate = TVDevice(
-            id: "roku-\(trimmed)",
-            name: "Roku TV",
-            platform: .roku,
-            host: trimmed,
-            port: 8060
-        )
+        if TVPlatformAvailability.isEnabled(.roku) {
+            let rokuCandidate = TVDevice(
+                id: "roku-\(trimmed)",
+                name: "Roku TV",
+                platform: .roku,
+                host: trimmed,
+                port: 8060
+            )
 
-        let roku = RokuAdapter(device: rokuCandidate)
+            let roku = RokuAdapter(device: rokuCandidate)
 
-        do {
-            _ = try await roku.connect()
-            let connectedDevice = roku.device
+            do {
+                _ = try await roku.connect()
+                let connectedDevice = roku.device
 
-            devices.removeAll { $0.id == connectedDevice.id }
-            devices.append(connectedDevice)
-            return connectedDevice
-        } catch {
-            lastError = "Orbit couldn’t identify a supported TV at that address."
-            return nil
+                devices.removeAll { $0.id == connectedDevice.id }
+                devices.append(connectedDevice)
+                return connectedDevice
+            } catch {
+                // Continue to the generic unsupported result below.
+            }
         }
+
+        lastError = "Orbit couldn’t identify a supported TV at that address."
+        return nil
     }
 
     private func device(from response: SSDPResponse) -> TVDevice? {
@@ -865,6 +916,7 @@ final class AppModel {
 
     @ObservationIgnored private var adapter: TVControlling?
     @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private var connectingDeviceID: String?
     @ObservationIgnored private let commandQueue = RemoteCommandQueue()
 
     init() {
@@ -917,7 +969,10 @@ final class AppModel {
 
     func select(_ device: TVDevice) {
         connectTask?.cancel()
+        connectingDeviceID = nil
         commandQueue.cancel()
+
+        let previousAdapter = adapter
 
         deviceStore.addOrUpdate(device)
 
@@ -926,11 +981,22 @@ final class AppModel {
             UserDefaults.standard.set(device.id, forKey: AppSettings.Keys.freeDeviceID)
         }
 
-        adapter = TVAdapterFactory.makeAdapter(for: device)
+        let replacement = TVAdapterFactory.makeAdapter(for: device)
+        adapter = replacement
         currentCapabilities = device.capabilities
         pairingRequirement = .none
         lastControlError = nil
-        connect()
+
+        Task { @MainActor [weak self, previousAdapter, replacement] in
+            await previousAdapter?.disconnect()
+
+            guard let self,
+                  self.adapter === replacement else {
+                return
+            }
+
+            self.connect()
+        }
     }
 
     func canUse(_ device: TVDevice) -> Bool {
@@ -958,8 +1024,6 @@ final class AppModel {
     }
 
     func connect() {
-        connectTask?.cancel()
-
         guard let device = currentDevice else {
             adapter = nil
             connectionState = .connecting
@@ -968,14 +1032,29 @@ final class AppModel {
             return
         }
 
+        if connectingDeviceID == device.id,
+           connectionState == .connecting {
+            return
+        }
+
+        connectTask?.cancel()
+
         if adapter?.device.id != device.id {
             commandQueue.cancel()
-            adapter = TVAdapterFactory.makeAdapter(for: device)
+
+            let previousAdapter = adapter
+            let replacement = TVAdapterFactory.makeAdapter(for: device)
+            adapter = replacement
+
+            Task {
+                await previousAdapter?.disconnect()
+            }
         }
 
         guard let adapter else { return }
 
         let deviceID = device.id
+        connectingDeviceID = deviceID
         connectionState = .connecting
         lastControlError = nil
 
@@ -1003,6 +1082,7 @@ final class AppModel {
                 self.currentCapabilities = connection.capabilities
                 self.pairingRequirement = connection.pairingRequirement
                 self.lastControlError = nil
+                self.connectingDeviceID = nil
             } catch is CancellationError {
                 return
             } catch {
@@ -1016,6 +1096,7 @@ final class AppModel {
                 self.currentCapabilities = []
                 self.pairingRequirement = .none
                 self.lastControlError = error.localizedDescription
+                self.connectingDeviceID = nil
             }
         }
     }
@@ -1025,6 +1106,23 @@ final class AppModel {
 
         if !requiresPairing {
             connect()
+        }
+    }
+
+    func appDidEnterBackground() {
+        connectTask?.cancel()
+        connectTask = nil
+        connectingDeviceID = nil
+        commandQueue.cancel()
+
+        guard let activeAdapter = adapter else {
+            return
+        }
+
+        connectionState = .connecting
+
+        Task {
+            await activeAdapter.disconnect()
         }
     }
 
@@ -1101,8 +1199,7 @@ final class AppModel {
             } catch {
                 guard self.currentDevice?.id == deviceID else { return }
 
-                self.lastControlError = error.localizedDescription
-                self.connectionState = .unavailable
+                self.applyControlError(error)
             }
         }
     }
@@ -1151,8 +1248,7 @@ final class AppModel {
         } catch is CancellationError {
             return
         } catch {
-            lastControlError = error.localizedDescription
-            connectionState = .unavailable
+            applyControlError(error)
         }
     }
 
@@ -1177,33 +1273,70 @@ final class AppModel {
         guard let device = currentDevice else { return }
 
         connectTask?.cancel()
+        connectTask = nil
+        connectingDeviceID = nil
         commandQueue.cancel()
-        favorites.removeAll(for: device.id)
-        deviceStore.remove(device)
+
+        let previousAdapter = adapter
         adapter = nil
 
-        if currentDevice != nil {
-            refreshSelection()
-        } else {
-            connectionState = .connecting
-            currentCapabilities = []
-            pairingRequirement = .none
-            lastControlError = nil
+        favorites.removeAll(for: device.id)
+        deviceStore.remove(device)
+
+        Task { @MainActor [weak self, previousAdapter] in
+            await previousAdapter?.disconnect()
+
+            guard let self else { return }
+
+            if self.currentDevice != nil {
+                self.refreshSelection()
+            } else {
+                self.connectionState = .connecting
+                self.currentCapabilities = []
+                self.pairingRequirement = .none
+                self.lastControlError = nil
+            }
         }
     }
 
     func refreshSelection() {
         connectTask?.cancel()
+        connectTask = nil
+        connectingDeviceID = nil
         commandQueue.cancel()
-        adapter = currentDevice.map(TVAdapterFactory.makeAdapter)
+
+        let previousAdapter = adapter
+        let replacement = currentDevice.map(TVAdapterFactory.makeAdapter)
+        adapter = replacement
         currentCapabilities = currentDevice?.capabilities ?? []
         pairingRequirement = .none
         lastControlError = nil
 
-        if currentDevice != nil {
-            connect()
-        } else {
-            connectionState = .connecting
+        Task { @MainActor [weak self, previousAdapter, replacement] in
+            await previousAdapter?.disconnect()
+
+            guard let self else { return }
+
+            if let replacement,
+               self.adapter === replacement,
+               self.currentDevice != nil {
+                self.connect()
+            } else if self.currentDevice == nil {
+                self.connectionState = .connecting
+            }
         }
+    }
+
+    private func applyControlError(_ error: Error) {
+        lastControlError = error.localizedDescription
+
+        if let controlError = error as? TVControlError {
+            if controlError.affectsConnectionState {
+                connectionState = .unavailable
+            }
+            return
+        }
+
+        connectionState = .unavailable
     }
 }

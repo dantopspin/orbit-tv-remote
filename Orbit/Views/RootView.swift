@@ -22,8 +22,17 @@ struct RootView: View {
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active, onboardingCompleted {
+            guard onboardingCompleted else { return }
+
+            switch newPhase {
+            case .active:
                 appModel.appDidBecomeActive()
+            case .background:
+                appModel.appDidEnterBackground()
+            case .inactive:
+                break
+            @unknown default:
+                break
             }
         }
     }

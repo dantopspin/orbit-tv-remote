@@ -209,14 +209,17 @@ final class RokuAdapter: NSObject, TVControlling {
             throw TVControlError.invalidResponse
         }
 
-        if http.statusCode == 403 {
+        if http.statusCode == 401 || http.statusCode == 403 {
             throw TVControlError.permissionDenied(
                 "Roku mobile-app control is disabled or limited. On your Roku, allow control by mobile apps, then try again."
             )
         }
 
         guard (200..<300).contains(http.statusCode) else {
-            throw TVControlError.unreachable
+            throw TVControlError.rejected(
+                status: http.statusCode,
+                message: "Roku rejected that command."
+            )
         }
     }
 

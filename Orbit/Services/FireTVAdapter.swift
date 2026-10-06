@@ -659,7 +659,10 @@ final class FireTVAdapter: NSObject, TVControlling {
             )
         }
 
-        return .unreachable
+        return .rejected(
+            status: status,
+            message: "Fire TV rejected that command."
+        )
     }
 
     private func pairingError(
@@ -673,7 +676,10 @@ final class FireTVAdapter: NSObject, TVControlling {
             )
         }
 
-        return .unreachable
+        return .rejected(
+            status: status,
+            message: "Fire TV rejected the pairing request."
+        )
     }
 
     private func token(
