@@ -28,8 +28,104 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         )
     }
 
+    func identify() async throws -> TVDevice {
+        guard let url = URL(
+            string:
+                "wss://\(device.host):\(Self.securePort)"
+        ) else {
+            throw TVControlError.invalidResponse
+        }
+
+        let configuration =
+            URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 5
+        configuration.timeoutIntervalForResource = 8
+        configuration.waitsForConnectivity = false
+
+        let probe = JSONWebSocketTransport(
+            url: url,
+            configuration: configuration,
+            delegate: trustDelegate
+        )
+        probe.start()
+        defer { probe.disconnect() }
+
+        try await probe.sendJSONObject([
+            "id": "orbit_hello",
+            "type": "hello",
+            "payload": [:]
+        ])
+
+        let data = try await probe.nextEvent(
+            timeout: 5
+        )
+        let root = try decode(data)
+
+        guard root["type"] as? String == "hello",
+              let payload =
+                root["payload"] as? [String: Any],
+              let rawUUID =
+                payload["deviceUUID"] as? String else {
+            throw TVControlError.invalidResponse
+        }
+
+        let uuid = rawUUID
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            .lowercased()
+
+        guard !uuid.isEmpty else {
+            throw TVControlError.invalidResponse
+        }
+
+        let resolvedID = "lg-\(uuid)"
+        let manualID = "lg-\(device.host)"
+        var aliases = device.discoveryAliases
+
+        if device.id != manualID,
+           device.id != resolvedID {
+            aliases.insert(device.id)
+        }
+
+        return TVDevice(
+            id: resolvedID,
+            name: device.name,
+            platform: .lgWebOS,
+            host: device.host,
+            port: Self.securePort,
+            roomName: device.roomName,
+            discoveryIDs:
+                aliases.isEmpty ? nil : aliases,
+            capabilities:
+                device.capabilities
+        )
+    }
+
     func connect() async throws -> TVConnectionInfo {
         await disconnect()
+
+        let previousID = device.id
+        let identified = try await identify()
+        device = identified
+
+        if previousID != identified.id,
+           let credential =
+                try? PairingCredentialStore.load(
+                    LGCredential.self,
+                    platform: .lgWebOS,
+                    deviceID: previousID
+                ) {
+            try? PairingCredentialStore.save(
+                credential,
+                platform: .lgWebOS,
+                deviceID: identified.id
+            )
+            PairingCredentialStore.remove(
+                platform: .lgWebOS,
+                deviceID: previousID
+            )
+        }
 
         try await connect(
             using: "wss",

@@ -964,9 +964,9 @@ final class DiscoveryService {
             }
         }
 
-        if lgPlainReachable ||
-            lgSecureReachable {
-            var lgCandidate = TVDevice(
+        if lgSecureReachable ||
+            lgPlainReachable {
+            let lgCandidate = TVDevice(
                 id: "lg-\(trimmed)",
                 name: "LG TV",
                 platform: .lgWebOS,
@@ -986,23 +986,31 @@ final class DiscoveryService {
                 ]
             )
 
-            if let discoveredAlias = devices.first(
-                where: {
-                    $0.platform == .lgWebOS &&
-                    $0.host == trimmed &&
-                    $0.id != lgCandidate.id
-                }
-            )?.id {
-                lgCandidate.formDiscoveryAliases(
-                    [discoveredAlias]
-                )
-            }
+            let lg = LGWebOSAdapter(
+                device: lgCandidate
+            )
 
-            devices.removeAll {
-                $0.id == lgCandidate.id
+            if var identified =
+                try? await lg.identify() {
+                if let discoveredAlias =
+                    devices.first(
+                        where: {
+                            $0.platform == .lgWebOS &&
+                            $0.host == trimmed &&
+                            $0.id != identified.id
+                        }
+                    )?.id {
+                    identified.formDiscoveryAliases(
+                        [discoveredAlias]
+                    )
+                }
+
+                devices.removeAll {
+                    $0.id == identified.id
+                }
+                devices.append(identified)
+                return identified
             }
-            devices.append(lgCandidate)
-            return lgCandidate
         }
 
         #if DEBUG
