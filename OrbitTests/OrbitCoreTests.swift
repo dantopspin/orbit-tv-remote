@@ -143,6 +143,48 @@ final class DeviceStoreTests: XCTestCase {
         )
     }
 
+    func testRemovingFreeDevicePromotesNextSavedTV() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+
+        let first = TVDevice(
+            id: "first",
+            name: "First TV",
+            platform: .samsung,
+            host: "192.168.1.10"
+        )
+        let second = TVDevice(
+            id: "second",
+            name: "Second TV",
+            platform: .lgWebOS,
+            host: "192.168.1.11"
+        )
+
+        store.addOrUpdate(first)
+        store.addOrUpdate(second)
+        store.select(first)
+
+        UserDefaults.standard.set(
+            first.id,
+            forKey: AppSettings.Keys.freeDeviceID
+        )
+
+        store.remove(first)
+
+        XCTAssertEqual(
+            store.selectedDeviceID,
+            second.id
+        )
+        XCTAssertEqual(
+            UserDefaults.standard.string(
+                forKey: AppSettings.Keys.freeDeviceID
+            ),
+            second.id
+        )
+    }
+
     private func clearDeviceDefaults() {
         for key in [
             AppSettings.Keys.savedDevices,

@@ -91,9 +91,36 @@ final class DeviceStore {
     }
 
     func remove(_ device: TVDevice) {
-        devices.removeAll { $0.id == device.id }
-        if selectedDeviceID == device.id { selectedDeviceID = devices.first?.id }
-        PairingCredentialStore.remove(platform: device.platform, deviceID: device.id)
+        let wasFreeDevice =
+            UserDefaults.standard.string(
+                forKey: AppSettings.Keys.freeDeviceID
+            ) == device.id
+
+        devices.removeAll {
+            $0.id == device.id
+        }
+
+        if selectedDeviceID == device.id {
+            selectedDeviceID = devices.first?.id
+        }
+
+        if wasFreeDevice {
+            if let selectedDeviceID {
+                UserDefaults.standard.set(
+                    selectedDeviceID,
+                    forKey: AppSettings.Keys.freeDeviceID
+                )
+            } else {
+                UserDefaults.standard.removeObject(
+                    forKey: AppSettings.Keys.freeDeviceID
+                )
+            }
+        }
+
+        PairingCredentialStore.remove(
+            platform: device.platform,
+            deviceID: device.id
+        )
         persist()
     }
 
@@ -709,23 +736,47 @@ final class PurchaseManager {
         products.first { $0.id == id }
     }
 
-    private func refreshEntitlements() async {
+    func refreshEntitlements() async {
         var active = false
+        let now = Date()
+
         for await result in Transaction.currentEntitlements {
-            guard let transaction = try? verified(result) else { continue }
-            if [Self.weeklyID, Self.monthlyID].contains(transaction.productID),
-               transaction.revocationDate == nil {
+            guard let transaction = try? verified(result) else {
+                continue
+            }
+
+            let isOrbitSubscription = [
+                Self.weeklyID,
+                Self.monthlyID
+            ].contains(transaction.productID)
+
+            let isNotExpired =
+                transaction.expirationDate.map {
+                    $0 > now
+                } ?? true
+
+            if isOrbitSubscription,
+               transaction.revocationDate == nil,
+               !transaction.isUpgraded,
+               isNotExpired {
                 active = true
+                break
             }
         }
 
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: AppSettings.Keys.premiumOverride) {
+        if UserDefaults.standard.bool(
+            forKey: AppSettings.Keys.premiumOverride
+        ) {
             active = true
         }
         #endif
 
         isPremium = active
+
+        if active {
+            purchasePending = false
+        }
     }
 
     private func observeTransactions() -> Task<Void, Never> {
@@ -734,6 +785,7 @@ final class PurchaseManager {
                 guard let self else { return }
                 if let transaction = try? self.verified(update) {
                     await transaction.finish()
+                    self.purchasePending = false
                     await self.refreshEntitlements()
                 }
             }
@@ -1188,7 +1240,13 @@ final class AppModel {
     }
 
     func appDidBecomeActive() {
-        guard currentDevice != nil else { return }
+        Task { @MainActor [weak self] in
+            await self?.purchases.refreshEntitlements()
+        }
+
+        guard currentDevice != nil else {
+            return
+        }
 
         if !requiresPairing {
             connect()
