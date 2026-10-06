@@ -29,7 +29,7 @@ final class AndroidTVAdapter: TVControlling {
                     platform: .androidTV,
                     deviceID: device.id
                 )
-                await remoteManager?.disconnect()
+                remoteManager?.disconnect()
                 remoteManager = nil
             }
         }
@@ -433,7 +433,7 @@ final class AndroidTVAdapter: TVControlling {
 }
 
 private struct AndroidTVPairingMarker: Codable {
-    let pairedAt = Date()
+    var pairedAt: Date = Date()
 }
 
 private final class AndroidTVServerKeyBox: @unchecked Sendable {
