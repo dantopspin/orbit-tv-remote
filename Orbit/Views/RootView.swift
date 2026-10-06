@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RootView: View {
-    @EnvironmentObject private var appModel: AppModel
+    @Environment(AppModel.self) private var appModel
     @AppStorage(AppSettings.Keys.onboardingCompleted) private var onboardingCompleted = false
 
     var body: some View {

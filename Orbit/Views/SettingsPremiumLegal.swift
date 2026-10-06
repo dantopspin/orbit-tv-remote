@@ -2,7 +2,7 @@ import SwiftUI
 import StoreKit
 
 struct SettingsView: View {
-    @EnvironmentObject private var appModel: AppModel
+    @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
 
     @AppStorage(AppSettings.Keys.hapticsEnabled) private var hapticsEnabled = true
@@ -98,7 +98,7 @@ private struct FAQView: View {
 }
 
 struct PremiumView: View {
-    @EnvironmentObject private var appModel: AppModel
+    @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedID = PurchaseManager.monthlyID
 

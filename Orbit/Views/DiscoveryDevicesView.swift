@@ -1,9 +1,8 @@
 import SwiftUI
 
 struct DiscoveryView: View {
-    @EnvironmentObject private var appModel: AppModel
+    @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var discovery = DiscoveryService()
     @State private var showManualAddress = false
     @State private var manualAddress = ""
 
@@ -22,25 +21,25 @@ struct DiscoveryView: View {
                 .padding(.top, 24)
                 .padding(.horizontal, 28)
 
-                if discovery.isSearching {
+                if appModel.discovery.isSearching {
                     ProgressView("Finding TVs…")
                         .padding(.top, 16)
                 }
 
-                if discovery.devices.isEmpty, !discovery.isSearching {
+                if appModel.discovery.devices.isEmpty, !appModel.discovery.isSearching {
                     ContentUnavailableView {
                         Label("No TVs found", systemImage: "tv")
                     } description: {
                         Text("Automatic discovery is being added protocol by protocol. You can connect to a Roku by local IP in this first build.")
                     } actions: {
                         Button("Scan Again") {
-                            discovery.startScan()
+                            appModel.discovery.startScan()
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.primary)
                     }
                 } else {
-                    List(discovery.devices) { device in
+                    List(appModel.discovery.devices) { device in
                         Button {
                             appModel.select(device)
                             dismiss()
@@ -79,7 +78,7 @@ struct DiscoveryView: View {
             }
             .background(Color.orbitBackground)
             .task {
-                discovery.startScan()
+                appModel.discovery.startScan()
             }
             .sheet(isPresented: $showManualAddress) {
                 NavigationStack {
@@ -88,7 +87,7 @@ struct DiscoveryView: View {
                             TextField("TV IP address", text: $manualAddress)
                                 .keyboardType(.decimalPad)
 
-                            if let error = discovery.lastError {
+                            if let error = appModel.discovery.lastError {
                                 Text(error)
                                     .foregroundStyle(.secondary)
                             }
@@ -106,8 +105,7 @@ struct DiscoveryView: View {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Connect") {
                                 Task {
-                                    await discovery.addManualRoku(host: manualAddress)
-                                    if let device = discovery.devices.first {
+                                    if let device = await appModel.discovery.addManualRoku(host: manualAddress) {
                                         appModel.select(device)
                                         showManualAddress = false
                                         dismiss()
@@ -124,7 +122,7 @@ struct DiscoveryView: View {
 }
 
 struct DevicesView: View {
-    @EnvironmentObject private var appModel: AppModel
+    @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var showAddTV = false
     @State private var showPremium = false

@@ -2,11 +2,13 @@ import Foundation
 import SwiftUI
 import StoreKit
 import UIKit
+import Observation
 
 @MainActor
-final class DeviceStore: ObservableObject {
-    @Published private(set) var devices: [TVDevice] = []
-    @Published var selectedDeviceID: String?
+@Observable
+final class DeviceStore {
+    private(set) var devices: [TVDevice] = []
+    var selectedDeviceID: String?
 
     init() { load() }
 
@@ -46,7 +48,12 @@ final class DeviceStore: ObservableObject {
         selectedDeviceID = UserDefaults.standard.string(forKey: AppSettings.Keys.selectedDeviceID)
         guard let data = UserDefaults.standard.data(forKey: AppSettings.Keys.savedDevices),
               let decoded = try? JSONDecoder().decode([TVDevice].self, from: data) else { return }
+
         devices = decoded
+
+        if selectedDevice == nil {
+            selectedDeviceID = devices.first?.id
+        }
     }
 
     private func persist() {
@@ -108,10 +115,11 @@ final class UnsupportedTVAdapter: TVControlling {
 }
 
 @MainActor
-final class DiscoveryService: ObservableObject {
-    @Published private(set) var devices: [TVDevice] = []
-    @Published private(set) var isSearching = false
-    @Published var lastError: String?
+@Observable
+final class DiscoveryService {
+    private(set) var devices: [TVDevice] = []
+    private(set) var isSearching = false
+    var lastError: String?
 
     func startScan() {
         isSearching = true
@@ -128,11 +136,12 @@ final class DiscoveryService: ObservableObject {
         isSearching = false
     }
 
-    func addManualRoku(host: String) async {
+    func addManualRoku(host: String) async -> TVDevice? {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return nil }
 
         isSearching = true
+        lastError = nil
         defer { isSearching = false }
 
         let candidate = TVDevice(
@@ -151,23 +160,26 @@ final class DiscoveryService: ObservableObject {
         if await adapter.probe() {
             devices.removeAll { $0.id == candidate.id }
             devices.append(candidate)
-        } else {
-            lastError = "No compatible Roku device responded at that address."
+            return candidate
         }
+
+        lastError = "No compatible Roku device responded at that address."
+        return nil
     }
 }
 
 @MainActor
-final class PurchaseManager: ObservableObject {
+@Observable
+final class PurchaseManager {
     static let weeklyID = "orbit.weekly"
     static let monthlyID = "orbit.monthly"
 
-    @Published private(set) var products: [Product] = []
-    @Published private(set) var isPremium = false
-    @Published private(set) var isLoading = false
-    @Published var errorMessage: String?
+    private(set) var products: [Product] = []
+    private(set) var isPremium = false
+    private(set) var isLoading = false
+    var errorMessage: String?
 
-    private var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private var updatesTask: Task<Void, Never>?
 
     init() {
         updatesTask = observeTransactions()
@@ -269,15 +281,16 @@ final class PurchaseManager: ObservableObject {
 }
 
 @MainActor
-final class AppModel: ObservableObject {
-    @Published var connectionState: TVConnectionState = .connecting
-    @Published var lastControlError: String?
+@Observable
+final class AppModel {
+    var connectionState: TVConnectionState = .connecting
+    var lastControlError: String?
 
     let deviceStore = DeviceStore()
     let discovery = DiscoveryService()
     let purchases = PurchaseManager()
 
-    private var adapter: TVControlling?
+    @ObservationIgnored private var adapter: TVControlling?
 
     var currentDevice: TVDevice? {
         deviceStore.selectedDevice
@@ -286,15 +299,21 @@ final class AppModel: ObservableObject {
     func select(_ device: TVDevice) {
         deviceStore.addOrUpdate(device)
         adapter = TVAdapterFactory.makeAdapter(for: device)
-        objectWillChange.send()
         connect()
     }
 
     func connect() {
-        guard let device = currentDevice else { return }
+        guard let device = currentDevice else {
+            adapter = nil
+            connectionState = .connecting
+            return
+        }
 
-        let adapter = TVAdapterFactory.makeAdapter(for: device)
-        self.adapter = adapter
+        if adapter?.device.id != device.id {
+            adapter = TVAdapterFactory.makeAdapter(for: device)
+        }
+
+        guard let adapter else { return }
         connectionState = .connecting
 
         Task {
@@ -346,15 +365,24 @@ final class AppModel: ObservableObject {
 
     func forgetCurrentDevice() {
         guard let device = currentDevice else { return }
+
         deviceStore.remove(device)
         adapter = nil
-        connectionState = .connecting
-        objectWillChange.send()
+
+        if currentDevice != nil {
+            refreshSelection()
+        } else {
+            connectionState = .connecting
+        }
     }
 
     func refreshSelection() {
         adapter = currentDevice.map(TVAdapterFactory.makeAdapter)
-        objectWillChange.send()
-        connect()
+
+        if currentDevice != nil {
+            connect()
+        } else {
+            connectionState = .connecting
+        }
     }
 }

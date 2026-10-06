@@ -200,7 +200,7 @@ enum RemoteMode: String, CaseIterable, Hashable {
 }
 
 struct RemoteView: View {
-    @EnvironmentObject private var appModel: AppModel
+    @Environment(AppModel.self) private var appModel
     @AppStorage(AppSettings.Keys.keepScreenAwake) private var keepScreenAwake = true
 
     @State private var mode: RemoteMode = .dpad
@@ -389,7 +389,7 @@ struct RemoteView: View {
 }
 
 struct KeyboardSheet: View {
-    @EnvironmentObject private var appModel: AppModel
+    @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var text = ""
@@ -462,7 +462,7 @@ struct KeyboardSheet: View {
 }
 
 struct AppsInputsView: View {
-    @EnvironmentObject private var appModel: AppModel
+    @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var selection = 0
@@ -530,7 +530,7 @@ struct AppsInputsView: View {
 }
 
 struct MoreMenuSheet: View {
-    @EnvironmentObject private var appModel: AppModel
+    @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var showDevices = false
