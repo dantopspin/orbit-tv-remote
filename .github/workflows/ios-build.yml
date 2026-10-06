@@ -24,6 +24,17 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
 
+      - name: Build Orbit Release
+        run: >
+          xcodebuild
+          -project Orbit.xcodeproj
+          -scheme Orbit
+          -configuration Release
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
       - name: Run Orbit unit tests
         run: >
           xcodebuild

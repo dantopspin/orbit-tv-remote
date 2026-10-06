@@ -541,3 +541,104 @@ final class RemoteFavoritesStoreTests: XCTestCase {
         )
     }
 }
+
+
+@MainActor
+final class TVAdapterEventEmitterTests: XCTestCase {
+    func testFreshSubscriptionReceivesEventsAfterPreviousCancellation() async {
+        let emitter = TVAdapterEventEmitter()
+
+        let firstStream = emitter.stream
+        let firstTask = Task {
+            for await _ in firstStream {
+                // The first monitor intentionally has no work.
+            }
+        }
+
+        firstTask.cancel()
+        _ = await firstTask.result
+
+        let secondStream = emitter.stream
+        let receiveTask = Task<TVAdapterEvent?, Never> {
+            var iterator =
+                secondStream.makeAsyncIterator()
+            return await iterator.next()
+        }
+
+        await Task.yield()
+
+        emitter.yield(
+            .disconnected(
+                message: "second connection"
+            )
+        )
+
+        let event = await receiveTask.value
+
+        XCTAssertEqual(
+            event,
+            .disconnected(
+                message: "second connection"
+            )
+        )
+    }
+}
+
+@MainActor
+final class RemoteCommandQueueTests: XCTestCase {
+    func testRepeatIsCoalescedButDiscreteCommandIsPreserved() async {
+        let queue = RemoteCommandQueue()
+        var delivered: [RemoteCommand] = []
+
+        let firstRepeat = queue.enqueue(
+            command: .up,
+            coalescing: true
+        ) {
+            delivered.append(.up)
+        }
+
+        let duplicateRepeat = queue.enqueue(
+            command: .up,
+            coalescing: true
+        ) {
+            delivered.append(.up)
+        }
+
+        let discrete = queue.enqueue(
+            command: .home,
+            coalescing: false
+        ) {
+            delivered.append(.home)
+        }
+
+        XCTAssertTrue(firstRepeat)
+        XCTAssertFalse(duplicateRepeat)
+        XCTAssertTrue(discrete)
+
+        await queue.waitUntilIdle()
+
+        XCTAssertEqual(
+            delivered,
+            [.up, .home]
+        )
+    }
+
+    func testCancelPreventsQueuedGenerationFromRunning() async {
+        let queue = RemoteCommandQueue()
+        var delivered: [RemoteCommand] = []
+
+        _ = queue.enqueue(
+            command: .left,
+            coalescing: true
+        ) {
+            delivered.append(.left)
+        }
+
+        queue.cancel()
+        await queue.waitUntilIdle()
+
+        XCTAssertTrue(
+            delivered.isEmpty
+        )
+    }
+}

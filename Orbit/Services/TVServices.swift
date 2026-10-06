@@ -1240,7 +1240,7 @@ final class RemoteFavoritesStore {
 }
 
 @MainActor
-private final class RemoteCommandQueue {
+final class RemoteCommandQueue {
     private var tail: Task<Void, Never>?
     private var pendingCoalescedCommands:
         Set<RemoteCommand> = []
@@ -1341,6 +1341,10 @@ private final class RemoteCommandQueue {
         tail?.cancel()
         tail = nil
         pendingCoalescedCommands.removeAll()
+    }
+
+    func waitUntilIdle() async {
+        await tail?.value
     }
 }
 
