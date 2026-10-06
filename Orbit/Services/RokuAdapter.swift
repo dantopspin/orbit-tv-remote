@@ -109,15 +109,20 @@ final class RokuAdapter: NSObject, TVControlling {
         let manualID = "roku-\(device.host)"
 
         let resolvedID: String
-        if device.id == manualID,
-           let stableID,
+
+        if let stableID,
            !stableID.isEmpty {
-            resolvedID = "roku-\(stableID.lowercased())"
+            resolvedID =
+                "roku-\(stableID.lowercased())"
         } else {
-            // SSDP USNs are stable across DHCP changes. Preserve a
-            // discovery-derived ID instead of replacing it with another
-            // hardware identifier and creating a duplicate on the next scan.
             resolvedID = device.id
+        }
+
+        var aliases = device.discoveryAliases
+
+        if device.id != manualID,
+           device.id != resolvedID {
+            aliases.insert(device.id)
         }
 
         var capabilities: Set<TVCapability> = [
@@ -145,6 +150,8 @@ final class RokuAdapter: NSObject, TVControlling {
             host: device.host,
             port: device.port ?? 8060,
             roomName: device.roomName,
+            discoveryIDs:
+                aliases.isEmpty ? nil : aliases,
             capabilities: capabilities
         )
     }

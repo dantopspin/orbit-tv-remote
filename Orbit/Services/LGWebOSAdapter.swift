@@ -56,7 +56,7 @@ final class LGWebOSAdapter: NSObject, TVControlling {
             )
         }
 
-        await resolveManualIdentityIfAvailable()
+        await resolveStableIdentityIfAvailable()
 
         let capabilities: Set<TVCapability> = [
             .directionalNavigation,
@@ -425,12 +425,8 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         }
     }
 
-    private func resolveManualIdentityIfAvailable() async {
+    private func resolveStableIdentityIfAvailable() async {
         let provisionalID = "lg-\(device.host)"
-
-        guard device.id == provisionalID else {
-            return
-        }
 
         guard let payload = try? await request(
             uri:
@@ -457,6 +453,13 @@ final class LGWebOSAdapter: NSObject, TVControlling {
            device.name == "LG TV",
            !modelName.isEmpty {
             device.name = "LG \(modelName)"
+        }
+
+        if oldID != provisionalID,
+           oldID != newID {
+            device.formDiscoveryAliases(
+                [oldID]
+            )
         }
 
         device.id = newID

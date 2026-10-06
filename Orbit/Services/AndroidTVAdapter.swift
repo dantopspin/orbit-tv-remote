@@ -579,9 +579,12 @@ final class AndroidTVAdapter: TVControlling {
             return
         }
 
-        device.formDiscoveryAliases(
-            [oldID]
-        )
+        device.discoveryIDs =
+            device.discoveryAliases.filter {
+                AndroidTVAdapter
+                    .isStableIdentity($0)
+            }
+        device.discoveryID = nil
         device.id = stableID
 
         if let marker =
@@ -600,6 +603,28 @@ final class AndroidTVAdapter: TVControlling {
                 deviceID: oldID
             )
         }
+    }
+
+    nonisolated private static func isStableIdentity(
+        _ id: String
+    ) -> Bool {
+        let lowered = id.lowercased()
+
+        guard lowered.hasPrefix("androidtv-") else {
+            return false
+        }
+
+        let suffix = lowered.dropFirst(
+            "androidtv-".count
+        )
+
+        return suffix.count == 32 &&
+            suffix.allSatisfy {
+                $0.isNumber ||
+                ("a"..."f").contains(
+                    String($0)
+                )
+            }
     }
 
     private func key(

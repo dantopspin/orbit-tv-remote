@@ -114,17 +114,19 @@ final class DeviceStore {
         }
 
         let savedAliases =
-            saved.discoveryAliases.union(
-                [saved.id]
+            Self.trustedIdentitySet(
+                for: saved
             )
         let incomingAliases =
-            incoming.discoveryAliases.union(
-                [incoming.id]
+            Self.trustedIdentitySet(
+                for: incoming
             )
 
-        return !savedAliases.isDisjoint(
-            with: incomingAliases
-        )
+        return !savedAliases.isEmpty &&
+            !incomingAliases.isEmpty &&
+            !savedAliases.isDisjoint(
+                with: incomingAliases
+            )
     }
 
     func reconcile(oldDeviceID: String, with resolvedDevice: TVDevice) {
@@ -143,7 +145,12 @@ final class DeviceStore {
         var merged = resolvedDevice
         merged.roomName = previous.roomName
         merged.formDiscoveryAliases(
-            previous.discoveryAliases
+            previous.discoveryAliases.filter {
+                Self.isTrustedIdentity(
+                    $0,
+                    platform: previous.platform
+                )
+            }
         )
 
         if oldDeviceID != resolvedDevice.id,
@@ -238,9 +245,13 @@ final class DeviceStore {
         }
 
         let incomingAliases =
-            incoming.discoveryAliases.union(
-                [incoming.id]
+            Self.trustedIdentitySet(
+                for: incoming
             )
+
+        guard !incomingAliases.isEmpty else {
+            return nil
+        }
 
         return devices.firstIndex { saved in
             guard saved.platform ==
@@ -249,13 +260,14 @@ final class DeviceStore {
             }
 
             let savedAliases =
-                saved.discoveryAliases.union(
-                    [saved.id]
+                Self.trustedIdentitySet(
+                    for: saved
                 )
 
-            return !savedAliases.isDisjoint(
-                with: incomingAliases
-            )
+            return !savedAliases.isEmpty &&
+                !savedAliases.isDisjoint(
+                    with: incomingAliases
+                )
         }
     }
 
@@ -267,14 +279,23 @@ final class DeviceStore {
         merged.host = incoming.host
         merged.port = incoming.port ?? previous.port
 
-        merged.formDiscoveryAliases(
+        merged.discoveryIDs =
             previous.discoveryAliases
                 .union(
                     incoming.discoveryAliases
                 )
-        )
+                .filter {
+                    Self.isTrustedIdentity(
+                        $0,
+                        platform: previous.platform
+                    )
+                }
 
-        if previous.id != incoming.id {
+        if previous.id != incoming.id,
+           Self.isTrustedIdentity(
+               incoming.id,
+               platform: incoming.platform
+           ) {
             merged.formDiscoveryAliases(
                 [incoming.id]
             )
@@ -330,6 +351,83 @@ final class DeviceStore {
         default:
             return nil
         }
+    }
+
+    private static func trustedIdentitySet(
+        for device: TVDevice
+    ) -> Set<String> {
+        device.discoveryAliases
+            .union([device.id])
+            .filter {
+                isTrustedIdentity(
+                    $0,
+                    platform: device.platform
+                )
+            }
+    }
+
+    private static func isTrustedIdentity(
+        _ id: String,
+        platform: TVPlatform
+    ) -> Bool {
+        let lowered = id.lowercased()
+
+        if platform == .androidTV {
+            guard lowered.hasPrefix("androidtv-") else {
+                return false
+            }
+
+            let suffix = lowered.dropFirst(
+                "androidtv-".count
+            )
+
+            return suffix.count == 32 &&
+                suffix.allSatisfy {
+                    $0.isNumber ||
+                    ("a"..."f").contains(
+                        String($0)
+                    )
+                }
+        }
+
+        let prefixes: [TVPlatform: String] = [
+            .roku: "roku-",
+            .samsung: "samsung-",
+            .lgWebOS: "lg-",
+            .fireTV: "firetv-"
+        ]
+
+        guard let prefix = prefixes[platform],
+              lowered.hasPrefix(prefix) else {
+            return true
+        }
+
+        let suffix = String(
+            lowered.dropFirst(prefix.count)
+        )
+        let octets = suffix
+            .split(separator: ".")
+            .compactMap { Int($0) }
+
+        let isIPv4 =
+            octets.count == 4 &&
+            octets.allSatisfy {
+                (0...255).contains($0)
+            }
+
+        return !isIPv4
+    }
+
+    func discardTransientDevice(
+        id: String
+    ) {
+        devices.removeAll { $0.id == id }
+
+        if selectedDeviceID == id {
+            selectedDeviceID = nil
+        }
+
+        persist()
     }
 
     private static func isProvisionalIdentity(
@@ -684,7 +782,7 @@ final class DiscoveryService {
             if self.devices.isEmpty,
                !ssdpResult.multicastSendSucceeded {
                 self.lastError =
-                    "Orbit couldn’t start automatic TV discovery. Check Local Network access in Settings, then scan again or connect by local IP."
+                    "Orbit couldn’t start SSDP discovery on this build. You can still connect by local IP. If Local Network access was denied, enable it in Settings and scan again."
             }
 
             self.onDevicesUpdated?(self.devices)
@@ -834,84 +932,67 @@ final class DiscoveryService {
                 device: samsungCandidate
             )
 
-            do {
-                _ = try await samsung.connect()
-                var connectedDevice = samsung.device
-
+            if var identified =
+                try? await samsung.identify() {
                 if let discoveredAlias = devices.first(
                     where: {
                         $0.platform == .samsung &&
                         $0.host == trimmed &&
-                        $0.id != connectedDevice.id
+                        $0.id != identified.id
                     }
                 )?.id {
-                    connectedDevice.formDiscoveryAliases(
+                    identified.formDiscoveryAliases(
                         [discoveredAlias]
                     )
                 }
 
-                await samsung.disconnect()
-
                 devices.removeAll {
-                    $0.id == connectedDevice.id
+                    $0.id == identified.id
                 }
-                devices.append(connectedDevice)
-                return connectedDevice
-            } catch TVControlError.permissionDenied(
-                let message
-            ) {
-                lastError = message
-                return nil
-            } catch {
-                await samsung.disconnect()
+                devices.append(identified)
+                return identified
             }
         }
 
         if lgPlainReachable ||
             lgSecureReachable {
-            let lgCandidate = TVDevice(
+            var lgCandidate = TVDevice(
                 id: "lg-\(trimmed)",
                 name: "LG TV",
                 platform: .lgWebOS,
                 host: trimmed,
-                port: 3001
+                port: 3001,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .inputSelection,
+                    .appLaunching,
+                    .playback,
+                    .channels
+                ]
             )
 
-            let lg = LGWebOSAdapter(
-                device: lgCandidate
-            )
-
-            do {
-                _ = try await lg.connect()
-                var connectedDevice = lg.device
-
-                if let discoveredAlias = devices.first(
-                    where: {
-                        $0.platform == .lgWebOS &&
-                        $0.host == trimmed &&
-                        $0.id != connectedDevice.id
-                    }
-                )?.id {
-                    connectedDevice.formDiscoveryAliases(
-                        [discoveredAlias]
-                    )
+            if let discoveredAlias = devices.first(
+                where: {
+                    $0.platform == .lgWebOS &&
+                    $0.host == trimmed &&
+                    $0.id != lgCandidate.id
                 }
-
-                await lg.disconnect()
-
-                devices.removeAll {
-                    $0.id == connectedDevice.id
-                }
-                devices.append(connectedDevice)
-                return connectedDevice
-            } catch TVControlError.permissionDenied(
-                let message
-            ) {
-                lastError = message
-                return nil
-            } catch {
-                await lg.disconnect()
+            )?.id {
+                lgCandidate.formDiscoveryAliases(
+                    [discoveredAlias]
+                )
             }
+
+            devices.removeAll {
+                $0.id == lgCandidate.id
+            }
+            devices.append(lgCandidate)
+            return lgCandidate
         }
 
         if TVPlatformAvailability.isEnabled(.roku) {

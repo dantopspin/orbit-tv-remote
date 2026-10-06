@@ -36,6 +36,11 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
         )
     }
 
+    func identify() async throws -> TVDevice {
+        let metadata = try await fetchMetadata()
+        return resolvedDevice(from: metadata)
+    }
+
     func connect() async throws -> TVConnectionInfo {
         await disconnect()
 
@@ -256,14 +261,19 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
         let manualID = "samsung-\(device.host)"
         let resolvedID: String
 
-        if device.id == manualID,
-           let stableID = metadata.stableID,
+        if let stableID = metadata.stableID,
            !stableID.isEmpty {
             resolvedID =
                 "samsung-\(stableID.lowercased())"
         } else {
-            // Keep an SSDP-derived identity stable across address changes.
             resolvedID = device.id
+        }
+
+        var aliases = device.discoveryAliases
+
+        if device.id != manualID,
+           device.id != resolvedID {
+            aliases.insert(device.id)
         }
 
         return TVDevice(
@@ -273,6 +283,8 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
             host: device.host,
             port: Self.securePort,
             roomName: device.roomName,
+            discoveryIDs:
+                aliases.isEmpty ? nil : aliases,
             capabilities: [
                 .directionalNavigation,
                 .touchpad,
