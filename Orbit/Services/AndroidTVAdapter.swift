@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import CryptoKit
 @preconcurrency import Network
 @preconcurrency import AndroidTVRemoteControl
 
@@ -508,6 +509,8 @@ final class AndroidTVAdapter: TVControlling {
             throw error
         }
 
+        resolveStableIdentityFromServerKey()
+
         manager.stateChanged = { [weak self, weak manager] state in
             switch state {
             case .error(let error):
@@ -533,6 +536,69 @@ final class AndroidTVAdapter: TVControlling {
             default:
                 break
             }
+        }
+    }
+
+    private func resolveStableIdentityFromServerKey() {
+        guard let key = serverKeyBox.get() else {
+            return
+        }
+
+        var copyError:
+            Unmanaged<CFError>?
+
+        guard let keyData =
+                SecKeyCopyExternalRepresentation(
+                    key,
+                    &copyError
+                ) as Data? else {
+            return
+        }
+
+        let fingerprint = SHA256.hash(
+            data: keyData
+        )
+        .prefix(16)
+        .map {
+            String(
+                format: "%02x",
+                $0
+            )
+        }
+        .joined()
+
+        guard !fingerprint.isEmpty else {
+            return
+        }
+
+        let oldID = device.id
+        let stableID =
+            "androidtv-\(fingerprint)"
+
+        guard oldID != stableID else {
+            return
+        }
+
+        device.formDiscoveryAliases(
+            [oldID]
+        )
+        device.id = stableID
+
+        if let marker =
+            try? PairingCredentialStore.load(
+                AndroidTVPairingMarker.self,
+                platform: .androidTV,
+                deviceID: oldID
+            ) {
+            try? PairingCredentialStore.save(
+                marker,
+                platform: .androidTV,
+                deviceID: stableID
+            )
+            PairingCredentialStore.remove(
+                platform: .androidTV,
+                deviceID: oldID
+            )
         }
     }
 

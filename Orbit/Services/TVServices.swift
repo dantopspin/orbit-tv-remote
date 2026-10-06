@@ -555,13 +555,46 @@ final class DiscoveryService {
             guard !Task.isCancelled, let self else { return }
 
             var discovered: [String: TVDevice] = [:]
+            var ssdpGroups:
+                [String: [(TVDevice, SSDPResponse)]] = [:]
 
             for response in responses {
-                guard let device = self.device(from: response),
-                      TVPlatformAvailability.isEnabled(device.platform) else {
+                guard let device = self.device(
+                    from: response
+                ),
+                TVPlatformAvailability.isEnabled(
+                    device.platform
+                ) else {
                     continue
                 }
-                discovered[device.id] = device
+
+                let key =
+                    "\(device.platform.rawValue)|" +
+                    device.host.lowercased()
+
+                ssdpGroups[key, default: []].append(
+                    (device, response)
+                )
+            }
+
+            for candidates in ssdpGroups.values {
+                guard var chosen =
+                        self.preferredSSDPDevice(
+                            from: candidates
+                        ) else {
+                    continue
+                }
+
+                let aliases = Set(
+                    candidates.map { $0.0.id }
+                ).subtracting(
+                    [chosen.id]
+                )
+
+                chosen.formDiscoveryAliases(
+                    aliases
+                )
+                discovered[chosen.id] = chosen
             }
 
             for device in androidDevices
@@ -824,6 +857,56 @@ final class DiscoveryService {
 
         lastError = "Orbit couldn’t identify a supported TV at that address."
         return nil
+    }
+
+    private func preferredSSDPDevice(
+        from candidates: [(TVDevice, SSDPResponse)]
+    ) -> TVDevice? {
+        candidates.sorted { lhs, rhs in
+            let leftRank = discoveryRank(
+                for: lhs.1,
+                platform: lhs.0.platform
+            )
+            let rightRank = discoveryRank(
+                for: rhs.1,
+                platform: rhs.0.platform
+            )
+
+            if leftRank != rightRank {
+                return leftRank < rightRank
+            }
+
+            return lhs.0.id < rhs.0.id
+        }
+        .first?
+        .0
+    }
+
+    private func discoveryRank(
+        for response: SSDPResponse,
+        platform: TVPlatform
+    ) -> Int {
+        let target =
+            response.searchTarget?
+                .lowercased() ?? ""
+
+        switch platform {
+        case .samsung:
+            return target.contains(
+                "remotecontrolreceiver"
+            ) ? 0 : 10
+
+        case .lgWebOS:
+            return target.contains(
+                "webos-second-screen"
+            ) ? 0 : 10
+
+        case .roku:
+            return target == "roku:ecp" ? 0 : 10
+
+        default:
+            return 10
+        }
     }
 
     private func device(from response: SSDPResponse) -> TVDevice? {
