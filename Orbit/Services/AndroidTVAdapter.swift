@@ -61,6 +61,32 @@ final class AndroidTVAdapter: TVControlling {
                 remoteManager?.disconnect()
                 remoteManager = nil
             }
+        } else {
+            // The pairing marker is only Orbit's local hint. The TV
+            // actually trusts the persistent client certificate. Try the
+            // remote service once before showing a new pairing code so a
+            // previously paired TV discovered under a new IP/name can be
+            // recognized by its server-key fingerprint without prompting.
+            do {
+                try await connectRemote()
+
+                try? PairingCredentialStore.save(
+                    AndroidTVPairingMarker(),
+                    platform: .androidTV,
+                    deviceID: device.id
+                )
+
+                return connectedInfo()
+            } catch let error as TVControlError {
+                guard case .permissionDenied = error else {
+                    throw error
+                }
+
+                remoteGeneration += 1
+                remoteManager?.stateChanged = nil
+                remoteManager?.disconnect()
+                remoteManager = nil
+            }
         }
 
         let requirement = try await pairingRequirement()
