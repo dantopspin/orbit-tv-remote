@@ -143,6 +143,128 @@ final class DeviceStoreTests: XCTestCase {
         )
     }
 
+    func testDiscoveryAliasRefreshesSavedTVAfterAddressChange() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+
+        let manuallyResolved = TVDevice(
+            id: "samsung-hardware-123",
+            name: "Living Room",
+            platform: .samsung,
+            host: "192.168.1.10",
+            roomName: "Living Room",
+            capabilities: [
+                .directionalNavigation,
+                .power
+            ]
+        )
+
+        store.addOrUpdate(manuallyResolved)
+
+        let firstDiscovery = TVDevice(
+            id: "samsung-uuid:ssdp-123",
+            name: "Samsung TV",
+            platform: .samsung,
+            host: "192.168.1.10",
+            port: 8002
+        )
+
+        let firstChanges = store.refreshKnownDevices(
+            from: [firstDiscovery]
+        )
+
+        XCTAssertTrue(firstChanges.isEmpty)
+        XCTAssertEqual(
+            store.devices.count,
+            1
+        )
+        XCTAssertEqual(
+            store.selectedDevice?.id,
+            manuallyResolved.id
+        )
+        XCTAssertEqual(
+            store.selectedDevice?.discoveryID,
+            firstDiscovery.id
+        )
+        XCTAssertEqual(
+            store.selectedDevice?.name,
+            "Living Room"
+        )
+
+        let movedDiscovery = TVDevice(
+            id: firstDiscovery.id,
+            name: "Samsung TV",
+            platform: .samsung,
+            host: "192.168.1.44",
+            port: 8002
+        )
+
+        let secondChanges = store.refreshKnownDevices(
+            from: [movedDiscovery]
+        )
+
+        XCTAssertEqual(
+            secondChanges,
+            [manuallyResolved.id]
+        )
+        XCTAssertEqual(
+            store.selectedDevice?.host,
+            "192.168.1.44"
+        )
+        XCTAssertEqual(
+            store.selectedDevice?.roomName,
+            "Living Room"
+        )
+    }
+
+    func testAddOrUpdateUsesSavedIdentityForDiscoveryAlias() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+
+        let saved = TVDevice(
+            id: "lg-hardware-1",
+            name: "Bedroom",
+            platform: .lgWebOS,
+            host: "192.168.1.12",
+            discoveryID: "lg-uuid:ssdp-1"
+        )
+
+        store.addOrUpdate(saved)
+
+        let rediscovered = TVDevice(
+            id: "lg-uuid:ssdp-1",
+            name: "LG TV",
+            platform: .lgWebOS,
+            host: "192.168.1.55",
+            port: 3001
+        )
+
+        let stored = store.addOrUpdate(
+            rediscovered
+        )
+
+        XCTAssertEqual(
+            store.devices.count,
+            1
+        )
+        XCTAssertEqual(
+            stored.id,
+            saved.id
+        )
+        XCTAssertEqual(
+            stored.host,
+            "192.168.1.55"
+        )
+        XCTAssertEqual(
+            store.selectedDeviceID,
+            saved.id
+        )
+    }
+
     func testRemovingFreeDevicePromotesNextSavedTV() {
         clearDeviceDefaults()
         defer { clearDeviceDefaults() }

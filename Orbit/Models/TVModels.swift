@@ -47,6 +47,7 @@ struct TVDevice: Identifiable, Codable, Hashable, Sendable {
     var host: String
     var port: Int?
     var roomName: String?
+    var discoveryID: String?
     var capabilities: Set<TVCapability>
 
     init(
@@ -56,6 +57,7 @@ struct TVDevice: Identifiable, Codable, Hashable, Sendable {
         host: String,
         port: Int? = nil,
         roomName: String? = nil,
+        discoveryID: String? = nil,
         capabilities: Set<TVCapability> = []
     ) {
         self.id = id
@@ -64,6 +66,7 @@ struct TVDevice: Identifiable, Codable, Hashable, Sendable {
         self.host = host
         self.port = port
         self.roomName = roomName
+        self.discoveryID = discoveryID
         self.capabilities = capabilities
     }
 }

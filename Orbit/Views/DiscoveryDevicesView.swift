@@ -31,7 +31,7 @@ struct DiscoveryView: View {
                     ContentUnavailableView {
                         Label("No TVs found", systemImage: "tv")
                     } description: {
-                        Text("Make sure Local Network access is enabled. You can also connect by local IP while we finish discovery.")
+                        Text("Make sure Local Network access is enabled. You can also connect directly using your TV’s local IP address.")
                     } actions: {
                         Button("Scan Again") {
                             appModel.discovery.startScan()

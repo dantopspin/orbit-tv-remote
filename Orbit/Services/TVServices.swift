@@ -16,14 +16,24 @@ final class DeviceStore {
         devices.first { $0.id == selectedDeviceID }
     }
 
-    func addOrUpdate(_ device: TVDevice) {
-        if let index = devices.firstIndex(where: { $0.id == device.id }) {
-            devices[index] = device
-        } else {
-            devices.append(device)
+    @discardableResult
+    func addOrUpdate(_ device: TVDevice) -> TVDevice {
+        if let index = matchingIndex(for: device) {
+            let previous = devices[index]
+            let merged = merge(
+                previous,
+                with: device
+            )
+            devices[index] = merged
+            selectedDeviceID = merged.id
+            persist()
+            return merged
         }
+
+        devices.append(device)
         selectedDeviceID = device.id
         persist()
+        return device
     }
 
     func select(_ device: TVDevice) {
@@ -60,6 +70,7 @@ final class DeviceStore {
 
         var merged = resolvedDevice
         merged.roomName = previous.roomName
+        merged.discoveryID = previous.discoveryID
 
         if !genericNames.contains(previous.name) {
             merged.name = previous.name
@@ -88,6 +99,111 @@ final class DeviceStore {
         }
 
         persist()
+    }
+
+    @discardableResult
+    func refreshKnownDevices(
+        from discoveredDevices: [TVDevice]
+    ) -> Set<String> {
+        var endpointChanges: Set<String> = []
+        var didChange = false
+
+        for discovered in discoveredDevices {
+            guard let index = matchingIndex(
+                for: discovered
+            ) else {
+                continue
+            }
+
+            let previous = devices[index]
+            let merged = merge(
+                previous,
+                with: discovered
+            )
+
+            if previous.host != merged.host ||
+                previous.port != merged.port {
+                endpointChanges.insert(previous.id)
+            }
+
+            if previous != merged {
+                devices[index] = merged
+                didChange = true
+            }
+        }
+
+        if didChange {
+            persist()
+        }
+
+        return endpointChanges
+    }
+
+    private func matchingIndex(
+        for incoming: TVDevice
+    ) -> Int? {
+        if let exact = devices.firstIndex(
+            where: { $0.id == incoming.id }
+        ) {
+            return exact
+        }
+
+        if let alias = devices.firstIndex(
+            where: {
+                $0.discoveryID == incoming.id ||
+                (
+                    incoming.discoveryID != nil &&
+                    $0.id == incoming.discoveryID
+                )
+            }
+        ) {
+            return alias
+        }
+
+        return devices.firstIndex {
+            $0.platform == incoming.platform &&
+            $0.host == incoming.host
+        }
+    }
+
+    private func merge(
+        _ previous: TVDevice,
+        with incoming: TVDevice
+    ) -> TVDevice {
+        var merged = previous
+        merged.host = incoming.host
+        merged.port = incoming.port ?? previous.port
+
+        if previous.id != incoming.id,
+           previous.discoveryID != incoming.id {
+            merged.discoveryID = incoming.id
+        } else if let incomingDiscoveryID =
+                    incoming.discoveryID {
+            merged.discoveryID = incomingDiscoveryID
+        }
+
+        let genericNames: Set<String> = [
+            "Smart TV",
+            "Roku",
+            "Roku TV",
+            "Samsung TV",
+            "LG TV",
+            "Android TV",
+            "Fire TV",
+            previous.platform.displayName
+        ]
+
+        if genericNames.contains(previous.name),
+           !incoming.name.isEmpty {
+            merged.name = incoming.name
+        }
+
+        if merged.capabilities.isEmpty,
+           !incoming.capabilities.isEmpty {
+            merged.capabilities = incoming.capabilities
+        }
+
+        return merged
     }
 
     func remove(_ device: TVDevice) {
@@ -316,6 +432,8 @@ final class DiscoveryService {
     var lastError: String?
 
     @ObservationIgnored private var scanTask: Task<Void, Never>?
+    @ObservationIgnored var onDevicesUpdated:
+        (([TVDevice]) -> Void)?
 
     func startScan() {
         scanTask?.cancel()
@@ -357,6 +475,7 @@ final class DiscoveryService {
             self.devices = discovered.values.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
+            self.onDevicesUpdated?(self.devices)
             self.isSearching = false
         }
     }
@@ -448,52 +567,99 @@ final class DiscoveryService {
             }
         }
 
-        let samsungCandidate = TVDevice(
-            id: "samsung-\(trimmed)",
-            name: "Samsung TV",
-            platform: .samsung,
+        async let samsungHTTP = LocalTCPProbe.isReachable(
+            host: trimmed,
+            port: 8001
+        )
+        async let samsungSecure = LocalTCPProbe.isReachable(
             host: trimmed,
             port: 8002
         )
-
-        let samsung = SamsungTizenAdapter(device: samsungCandidate)
-
-        do {
-            _ = try await samsung.connect()
-            let connectedDevice = samsung.device
-
-            devices.removeAll { $0.id == connectedDevice.id }
-            devices.append(connectedDevice)
-            return connectedDevice
-        } catch TVControlError.permissionDenied(let message) {
-            lastError = message
-            return nil
-        } catch {
-            await samsung.disconnect()
-        }
-
-        let lgCandidate = TVDevice(
-            id: "lg-\(trimmed)",
-            name: "LG TV",
-            platform: .lgWebOS,
+        async let lgPlain = LocalTCPProbe.isReachable(
+            host: trimmed,
+            port: 3000
+        )
+        async let lgSecure = LocalTCPProbe.isReachable(
             host: trimmed,
             port: 3001
         )
 
-        let lg = LGWebOSAdapter(device: lgCandidate)
+        let (
+            samsungHTTPReachable,
+            samsungSecureReachable,
+            lgPlainReachable,
+            lgSecureReachable
+        ) = await (
+            samsungHTTP,
+            samsungSecure,
+            lgPlain,
+            lgSecure
+        )
 
-        do {
-            _ = try await lg.connect()
-            let connectedDevice = lg.device
+        if samsungHTTPReachable ||
+            samsungSecureReachable {
+            let samsungCandidate = TVDevice(
+                id: "samsung-\(trimmed)",
+                name: "Samsung TV",
+                platform: .samsung,
+                host: trimmed,
+                port: 8002
+            )
 
-            devices.removeAll { $0.id == connectedDevice.id }
-            devices.append(connectedDevice)
-            return connectedDevice
-        } catch TVControlError.permissionDenied(let message) {
-            lastError = message
-            return nil
-        } catch {
-            await lg.disconnect()
+            let samsung = SamsungTizenAdapter(
+                device: samsungCandidate
+            )
+
+            do {
+                _ = try await samsung.connect()
+                let connectedDevice = samsung.device
+
+                devices.removeAll {
+                    $0.id == connectedDevice.id
+                }
+                devices.append(connectedDevice)
+                return connectedDevice
+            } catch TVControlError.permissionDenied(
+                let message
+            ) {
+                lastError = message
+                return nil
+            } catch {
+                await samsung.disconnect()
+            }
+        }
+
+        if lgPlainReachable ||
+            lgSecureReachable {
+            let lgCandidate = TVDevice(
+                id: "lg-\(trimmed)",
+                name: "LG TV",
+                platform: .lgWebOS,
+                host: trimmed,
+                port: 3001
+            )
+
+            let lg = LGWebOSAdapter(
+                device: lgCandidate
+            )
+
+            do {
+                _ = try await lg.connect()
+                let connectedDevice = lg.device
+
+                devices.removeAll {
+                    $0.id == connectedDevice.id
+                }
+                devices.append(connectedDevice)
+                return connectedDevice
+            } catch TVControlError.permissionDenied(
+                let message
+            ) {
+                lastError = message
+                return nil
+            } catch {
+                await lg.disconnect()
+            }
         }
 
         if TVPlatformAvailability.isEnabled(.roku) {
@@ -1051,9 +1217,35 @@ final class AppModel {
     init() {
         KeychainStore.prepareForCurrentInstall()
 
-        if UserDefaults.standard.string(forKey: AppSettings.Keys.freeDeviceID) == nil,
-           let selectedID = deviceStore.selectedDeviceID {
-            UserDefaults.standard.set(selectedID, forKey: AppSettings.Keys.freeDeviceID)
+        if UserDefaults.standard.string(
+            forKey: AppSettings.Keys.freeDeviceID
+        ) == nil,
+        let selectedID = deviceStore.selectedDeviceID {
+            UserDefaults.standard.set(
+                selectedID,
+                forKey: AppSettings.Keys.freeDeviceID
+            )
+        }
+
+        discovery.onDevicesUpdated = {
+            [weak self] discoveredDevices in
+
+            guard let self else { return }
+
+            let movedDeviceIDs =
+                self.deviceStore.refreshKnownDevices(
+                    from: discoveredDevices
+                )
+
+            guard let currentID =
+                    self.currentDevice?.id,
+                  movedDeviceIDs.contains(
+                      currentID
+                  ) else {
+                return
+            }
+
+            self.refreshSelection()
         }
     }
 
@@ -1105,16 +1297,26 @@ final class AppModel {
 
         let previousAdapter = adapter
 
-        deviceStore.addOrUpdate(device)
+        let storedDevice =
+            deviceStore.addOrUpdate(device)
 
         if purchases.isPremium ||
-            UserDefaults.standard.string(forKey: AppSettings.Keys.freeDeviceID) == nil {
-            UserDefaults.standard.set(device.id, forKey: AppSettings.Keys.freeDeviceID)
+            UserDefaults.standard.string(
+                forKey: AppSettings.Keys.freeDeviceID
+            ) == nil {
+            UserDefaults.standard.set(
+                storedDevice.id,
+                forKey: AppSettings.Keys.freeDeviceID
+            )
         }
 
-        let replacement = TVAdapterFactory.makeAdapter(for: device)
+        let replacement =
+            TVAdapterFactory.makeAdapter(
+                for: storedDevice
+            )
         adapter = replacement
-        currentCapabilities = device.capabilities
+        currentCapabilities =
+            storedDevice.capabilities
         pairingRequirement = .none
         lastControlError = nil
 
