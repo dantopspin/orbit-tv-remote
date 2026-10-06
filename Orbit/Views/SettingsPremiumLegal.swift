@@ -42,7 +42,11 @@ struct SettingsView: View {
                     }
 
                     Button(appModel.purchases.isPremium ? "View Plan" : "View Orbit Pro") {
-                        showPremium = true
+                        if appModel.purchases.isPremium {
+                            showManageSubscriptions = true
+                        } else {
+                            showPremium = true
+                        }
                     }
 
                     Button("Restore Purchases") {
