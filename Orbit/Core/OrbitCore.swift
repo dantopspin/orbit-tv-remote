@@ -12,6 +12,7 @@ struct AppSettings {
         static let selectedDeviceID = "orbit.selectedDeviceID"
         static let savedDevices = "orbit.savedDevices"
         static let premiumOverride = "orbit.premiumOverride"
+        static let installationInitialized = "orbit.installationInitialized"
     }
 }
 
@@ -73,43 +74,135 @@ final class Haptics {
 }
 
 struct KeychainStore {
-    enum KeychainError: Error { case unexpectedStatus(OSStatus) }
+    enum KeychainError: Error {
+        case unexpectedStatus(OSStatus)
+    }
+
+    private static var service: String {
+        Bundle.main.bundleIdentifier ?? "com.dantopspin.orbitremote"
+    }
+
+    static func prepareForCurrentInstall() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: AppSettings.Keys.installationInitialized) else { return }
+
+        removeAll()
+        defaults.set(true, forKey: AppSettings.Keys.installationInitialized)
+    }
 
     static func set(_ data: Data, for key: String) throws {
-        let query: [String: Any] = [
+        let lookup: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Orbit",
+            kSecAttrService as String: service,
             kSecAttrAccount as String: key
         ]
-        SecItemDelete(query as CFDictionary)
-        var add = query
+
+        let updates: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+
+        let updateStatus = SecItemUpdate(lookup as CFDictionary, updates as CFDictionary)
+
+        if updateStatus == errSecSuccess {
+            return
+        }
+
+        guard updateStatus == errSecItemNotFound else {
+            throw KeychainError.unexpectedStatus(updateStatus)
+        }
+
+        var add = lookup
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(add as CFDictionary, nil)
-        guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
+
+        let addStatus = SecItemAdd(add as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw KeychainError.unexpectedStatus(addStatus)
+        }
     }
 
     static func data(for key: String) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Orbit",
+            kSecAttrService as String: service,
             kSecAttrAccount as String: key,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
+
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess else { throw KeychainError.unexpectedStatus(status) }
+
+        if status == errSecItemNotFound {
+            return nil
+        }
+
+        guard status == errSecSuccess else {
+            throw KeychainError.unexpectedStatus(status)
+        }
+
         return result as? Data
+    }
+
+    static func setCodable<T: Encodable>(_ value: T, for key: String) throws {
+        try set(JSONEncoder().encode(value), for: key)
+    }
+
+    static func codable<T: Decodable>(_ type: T.Type, for key: String) throws -> T? {
+        guard let data = try data(for: key) else { return nil }
+        return try JSONDecoder().decode(type, from: data)
     }
 
     static func remove(_ key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Orbit",
+            kSecAttrService as String: service,
             kSecAttrAccount as String: key
         ]
+
+        SecItemDelete(query as CFDictionary)
+    }
+
+    static func removeAll() {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service
+        ]
+
         SecItemDelete(query as CFDictionary)
     }
 }
+
+struct PairingCredentialStore {
+    static func key(platform: TVPlatform, deviceID: String) -> String {
+        "pairing.\(platform.rawValue).\(deviceID)"
+    }
+
+    static func save<T: Encodable>(
+        _ credential: T,
+        platform: TVPlatform,
+        deviceID: String
+    ) throws {
+        try KeychainStore.setCodable(
+            credential,
+            for: key(platform: platform, deviceID: deviceID)
+        )
+    }
+
+    static func load<T: Decodable>(
+        _ type: T.Type,
+        platform: TVPlatform,
+        deviceID: String
+    ) throws -> T? {
+        try KeychainStore.codable(
+            type,
+            for: key(platform: platform, deviceID: deviceID)
+        )
+    }
+
+    static func remove(platform: TVPlatform, deviceID: String) {
+        KeychainStore.remove(key(platform: platform, deviceID: deviceID))
+    }
+}
+
