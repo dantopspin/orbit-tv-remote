@@ -84,6 +84,7 @@ enum AndroidTVIdentityProvider {
             kSecPrivateKeyAttrs as String: [
                 kSecAttrIsPermanent as String: true,
                 kSecAttrApplicationTag as String: keyTag,
+                kSecAttrLabel as String: certificateLabel,
                 kSecAttrAccessible as String:
                     kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             ]
@@ -143,18 +144,24 @@ enum AndroidTVIdentityProvider {
     private static func identity(
         for certificate: SecCertificate
     ) -> SecIdentity? {
-        var identity: SecIdentity?
-        let status = SecIdentityCreateWithCertificate(
-            nil,
-            certificate,
-            &identity
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassIdentity,
+            kSecAttrLabel as String: certificateLabel,
+            kSecReturnRef as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(
+            query as CFDictionary,
+            &result
         )
 
         guard status == errSecSuccess else {
             return nil
         }
 
-        return identity
+        return (result as! SecIdentity)
     }
 
     private static func store(
