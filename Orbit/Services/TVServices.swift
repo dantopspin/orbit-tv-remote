@@ -217,7 +217,11 @@ final class DiscoveryService {
 
     func addManualRoku(host: String) async -> TVDevice? {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
+
+        guard isValidIPv4Address(trimmed) else {
+            lastError = "Enter a valid local IPv4 address, for example 192.168.1.24."
+            return nil
+        }
 
         isSearching = true
         lastError = nil
@@ -247,6 +251,22 @@ final class DiscoveryService {
         } catch {
             lastError = error.localizedDescription
             return nil
+        }
+    }
+
+    private func isValidIPv4Address(_ value: String) -> Bool {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return false }
+
+        return parts.allSatisfy { part in
+            guard !part.isEmpty,
+                  part.count <= 3,
+                  part.allSatisfy({ $0.isNumber }),
+                  let number = Int(part) else {
+                return false
+            }
+
+            return (0...255).contains(number)
         }
     }
 }
@@ -446,6 +466,8 @@ final class AppModel {
 
         deviceStore.addOrUpdate(device)
         adapter = TVAdapterFactory.makeAdapter(for: device)
+        currentCapabilities = device.capabilities
+        pairingRequirement = .none
         lastControlError = nil
         connect()
     }

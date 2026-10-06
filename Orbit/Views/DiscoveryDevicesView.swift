@@ -85,7 +85,9 @@ struct DiscoveryView: View {
                     Form {
                         Section("Manual Roku connection") {
                             TextField("TV IP address", text: $manualAddress)
-                                .keyboardType(.decimalPad)
+                                .keyboardType(.numbersAndPunctuation)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
 
                             if let error = appModel.discovery.lastError {
                                 Text(error)

@@ -207,6 +207,7 @@ struct RemoteView: View {
     @State private var showMore = false
     @State private var showKeyboard = false
     @State private var showAppsInputs = false
+    @State private var appsInputsInitialSelection = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -280,31 +281,45 @@ struct RemoteView: View {
                 .buttonStyle(OrbitPressStyle(cornerRadius: 23))
                 .foregroundStyle(.primary)
 
-                VolumePill(onCommand: appModel.send)
-                PlaybackRow(onCommand: appModel.send)
-
-                HStack(spacing: 12) {
-                    Button {
-                        showKeyboard = true
-                    } label: {
-                        Label("Keyboard", systemImage: "keyboard")
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                    }
-
-                    Button {
-                        showAppsInputs = true
-                    } label: {
-                        Label("Apps", systemImage: "square.grid.2x2")
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                    }
+                if appModel.currentCapabilities.contains(.volume) ||
+                    appModel.currentCapabilities.contains(.mute) {
+                    VolumePill(onCommand: appModel.send)
                 }
-                .font(.subheadline.weight(.semibold))
-                .background(Capsule().fill(Color.orbitSurface))
-                .clipShape(Capsule())
-                .buttonStyle(OrbitPressStyle(cornerRadius: 22))
-                .foregroundStyle(.primary)
+
+                if appModel.currentCapabilities.contains(.playback) {
+                    PlaybackRow(onCommand: appModel.send)
+                }
+
+                if appModel.currentCapabilities.contains(.keyboard) ||
+                    appModel.currentCapabilities.contains(.appLaunching) {
+                    HStack(spacing: 12) {
+                        if appModel.currentCapabilities.contains(.keyboard) {
+                            Button {
+                                showKeyboard = true
+                            } label: {
+                                Label("Keyboard", systemImage: "keyboard")
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 44)
+                            }
+                        }
+
+                        if appModel.currentCapabilities.contains(.appLaunching) {
+                            Button {
+                                appsInputsInitialSelection = 0
+                                showAppsInputs = true
+                            } label: {
+                                Label("Apps", systemImage: "square.grid.2x2")
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 44)
+                            }
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .background(Capsule().fill(Color.orbitSurface))
+                    .clipShape(Capsule())
+                    .buttonStyle(OrbitPressStyle(cornerRadius: 22))
+                    .foregroundStyle(.primary)
+                }
             }
             .padding(.horizontal, 22)
             .padding(.top, 8)
@@ -319,7 +334,7 @@ struct RemoteView: View {
             KeyboardSheet()
         }
         .sheet(isPresented: $showAppsInputs) {
-            AppsInputsView()
+            AppsInputsView(initialSelection: appsInputsInitialSelection)
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
@@ -452,7 +467,11 @@ struct AppsInputsView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selection = 0
+    @State private var selection: Int
+
+    init(initialSelection: Int = 0) {
+        _selection = State(initialValue: initialSelection)
+    }
     @State private var apps: [TVApp] = []
     @State private var inputs: [TVInput] = []
     @State private var isLoading = true
