@@ -122,17 +122,28 @@ struct SSDPResponse: Hashable, Sendable {
     }
 }
 
+struct SSDPScanResult: Sendable {
+    let responses: [SSDPResponse]
+    let multicastSendSucceeded: Bool
+}
+
 enum SSDPScanner {
     private static let multicastAddress = "239.255.255.250"
     private static let multicastPort: UInt16 = 1900
 
-    static func scan(timeout: TimeInterval = 1.8) async -> [SSDPResponse] {
-        await Task.detached(priority: .userInitiated) {
+    static func scan(
+        timeout: TimeInterval = 1.8
+    ) async -> SSDPScanResult {
+        await Task.detached(
+            priority: .userInitiated
+        ) {
             scanBlocking(timeout: timeout)
         }.value
     }
 
-    private static func scanBlocking(timeout: TimeInterval) -> [SSDPResponse] {
+    private static func scanBlocking(
+        timeout: TimeInterval
+    ) -> SSDPScanResult {
         let socketFD = Darwin.socket(
             AF_INET,
             SOCK_DGRAM,
@@ -140,7 +151,10 @@ enum SSDPScanner {
         )
 
         guard socketFD >= 0 else {
-            return []
+            return SSDPScanResult(
+                responses: [],
+                multicastSendSucceeded: false
+            )
         }
 
         defer {
@@ -163,9 +177,18 @@ enum SSDPScanner {
         destination.sin_family = sa_family_t(AF_INET)
         destination.sin_port = in_port_t(multicastPort).bigEndian
 
-        guard inet_pton(AF_INET, multicastAddress, &destination.sin_addr) == 1 else {
-            return []
+        guard inet_pton(
+            AF_INET,
+            multicastAddress,
+            &destination.sin_addr
+        ) == 1 else {
+            return SSDPScanResult(
+                responses: [],
+                multicastSendSucceeded: false
+            )
         }
+
+        var multicastSendSucceeded = false
 
         for searchTarget in ["roku:ecp", "ssdp:all"] {
             let request = [
@@ -180,19 +203,30 @@ enum SSDPScanner {
 
             guard let data = request.data(using: .utf8) else { continue }
 
-            data.withUnsafeBytes { bytes in
-                withUnsafePointer(to: &destination) { pointer in
-                    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { address in
-                        _ = Darwin.sendto(
+            let sent: Int = data.withUnsafeBytes { bytes in
+                withUnsafePointer(
+                    to: &destination
+                ) { pointer in
+                    pointer.withMemoryRebound(
+                        to: sockaddr.self,
+                        capacity: 1
+                    ) { address in
+                        Darwin.sendto(
                             socketFD,
                             bytes.baseAddress,
                             bytes.count,
                             0,
                             address,
-                            socklen_t(MemoryLayout<sockaddr_in>.size)
+                            socklen_t(
+                                MemoryLayout<sockaddr_in>.size
+                            )
                         )
                     }
                 }
+            }
+
+            if sent == data.count {
+                multicastSendSucceeded = true
             }
         }
 
@@ -240,7 +274,11 @@ enum SSDPScanner {
             }
         }
 
-        return Array(responses.values)
+        return SSDPScanResult(
+            responses: Array(responses.values),
+            multicastSendSucceeded:
+                multicastSendSucceeded
+        )
     }
 
 }

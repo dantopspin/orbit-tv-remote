@@ -561,17 +561,18 @@ final class DiscoveryService {
         devices = []
 
         scanTask = Task { [weak self] in
-            async let ssdpResponses = SSDPScanner.scan(
+            async let ssdpScan = SSDPScanner.scan(
                 timeout: 1.8
             )
             async let androidTVs = AndroidTVBonjourScanner.scan(
                 timeout: 1.8
             )
 
-            let (responses, androidDevices) = await (
-                ssdpResponses,
+            let (ssdpResult, androidDevices) = await (
+                ssdpScan,
                 androidTVs
             )
+            let responses = ssdpResult.responses
 
             guard !Task.isCancelled, let self else { return }
 
@@ -624,8 +625,17 @@ final class DiscoveryService {
             }
 
             self.devices = discovered.values.sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                $0.name.localizedCaseInsensitiveCompare(
+                    $1.name
+                ) == .orderedAscending
             }
+
+            if self.devices.isEmpty,
+               !ssdpResult.multicastSendSucceeded {
+                self.lastError =
+                    "Orbit couldn’t start automatic TV discovery. Check Local Network access in Settings, then scan again or connect by local IP."
+            }
+
             self.onDevicesUpdated?(self.devices)
             self.isSearching = false
         }
