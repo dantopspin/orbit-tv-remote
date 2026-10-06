@@ -177,6 +177,8 @@ enum TVAdapterFactory {
             return RokuAdapter(device: device)
         case .samsung:
             return SamsungTizenAdapter(device: device)
+        case .lgWebOS:
+            return LGWebOSAdapter(device: device)
         default:
             return UnsupportedTVAdapter(device: device)
         }
@@ -253,6 +255,30 @@ final class DiscoveryService {
             return nil
         } catch {
             await samsung.disconnect()
+        }
+
+        let lgCandidate = TVDevice(
+            id: "lg-\(trimmed)",
+            name: "LG TV",
+            platform: .lgWebOS,
+            host: trimmed,
+            port: 3001
+        )
+
+        let lg = LGWebOSAdapter(device: lgCandidate)
+
+        do {
+            _ = try await lg.connect()
+            let connectedDevice = lg.device
+
+            devices.removeAll { $0.id == connectedDevice.id }
+            devices.append(connectedDevice)
+            return connectedDevice
+        } catch TVControlError.permissionDenied(let message) {
+            lastError = message
+            return nil
+        } catch {
+            await lg.disconnect()
         }
 
         let rokuCandidate = TVDevice(

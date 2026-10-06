@@ -10,6 +10,7 @@
 		598AD026B35881C47DB1EC7A /* OrbitApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E72CF597D46CAD26626176F /* OrbitApp.swift */; };
 		1ABA15102CACF94F435B33D3 /* RokuAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C945E9F82201653704D54FAB /* RokuAdapter.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* SamsungTizenAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C2D3E4F5061728394A5B6C /* SamsungTizenAdapter.swift */; };
+		E1F2031425364758A9B0C1D2 /* LGWebOSAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F102132435465768A9B0C1D2 /* LGWebOSAdapter.swift */; };
 		8A80902EB8F7C8A2FC199449 /* TVServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C41EFDB57B45D7A3E35C7BE /* TVServices.swift */; };
 		2ADF9308758B1CBF7E1E5E41 /* DiscoveryDevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED7F331D74E7B309EFCDF9B /* DiscoveryDevicesView.swift */; };
 		5979A790DAABF72EEA0A7DE5 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03F97DB6594A6D4358A5AEF /* OnboardingView.swift */; };
@@ -25,6 +26,7 @@
 		2E72CF597D46CAD26626176F /* OrbitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbitApp.swift; sourceTree = "<group>"; };
 		C945E9F82201653704D54FAB /* RokuAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RokuAdapter.swift; sourceTree = "<group>"; };
 		B1C2D3E4F5061728394A5B6C /* SamsungTizenAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SamsungTizenAdapter.swift; sourceTree = "<group>"; };
+		F102132435465768A9B0C1D2 /* LGWebOSAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LGWebOSAdapter.swift; sourceTree = "<group>"; };
 		7C41EFDB57B45D7A3E35C7BE /* TVServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVServices.swift; sourceTree = "<group>"; };
 		4ED7F331D74E7B309EFCDF9B /* DiscoveryDevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryDevicesView.swift; sourceTree = "<group>"; };
 		B03F97DB6594A6D4358A5AEF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -68,6 +70,7 @@
 			3C28CCE9F6597368C4CE22C6 /* TVModels.swift */,
 		); path = Models; sourceTree = "<group>"; };
 		0A0BBFD12C9FB720517EEFC0 /* Services */ = {isa = PBXGroup; children = (
+			F102132435465768A9B0C1D2 /* LGWebOSAdapter.swift */,
 			B1C2D3E4F5061728394A5B6C /* SamsungTizenAdapter.swift */,
 			C945E9F82201653704D54FAB /* RokuAdapter.swift */,
 			7C41EFDB57B45D7A3E35C7BE /* TVServices.swift */,
@@ -109,6 +112,7 @@
 			598AD026B35881C47DB1EC7A /* OrbitApp.swift in Sources */,
 			1ABA15102CACF94F435B33D3 /* RokuAdapter.swift in Sources */,
 			A1B2C3D4E5F60718293A4B5C /* SamsungTizenAdapter.swift in Sources */,
+			E1F2031425364758A9B0C1D2 /* LGWebOSAdapter.swift in Sources */,
 			8A80902EB8F7C8A2FC199449 /* TVServices.swift in Sources */,
 			2ADF9308758B1CBF7E1E5E41 /* DiscoveryDevicesView.swift in Sources */,
 			5979A790DAABF72EEA0A7DE5 /* OnboardingView.swift in Sources */,
