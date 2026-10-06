@@ -19,7 +19,7 @@ struct SettingsView: View {
                     Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
                     Toggle("Dark Mode", isOn: $darkMode)
                 }
-                .tint(.primary)
+                .tint(.secondary)
 
                 Section("Plan") {
                     HStack {

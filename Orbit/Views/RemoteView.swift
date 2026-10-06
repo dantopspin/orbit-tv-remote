@@ -46,6 +46,16 @@ private struct DirectionButton: View {
     let command: RemoteCommand
     let onCommand: (RemoteCommand) -> Void
 
+    private var accessibilityName: String {
+        switch command {
+        case .up: return "Up"
+        case .down: return "Down"
+        case .left: return "Left"
+        case .right: return "Right"
+        default: return "Direction"
+        }
+    }
+
     var body: some View {
         Button {
             onCommand(command)
@@ -57,6 +67,7 @@ private struct DirectionButton: View {
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 28))
         .foregroundStyle(.primary)
+        .accessibilityLabel(accessibilityName)
     }
 }
 
@@ -88,6 +99,7 @@ struct RoundRemoteButton: View {
             )
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 29))
+        .accessibilityLabel(label ?? (destructivePower ? "Power" : "Remote control"))
     }
 }
 
@@ -96,9 +108,9 @@ struct VolumePill: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SegmentButton(systemName: "minus", action: { onCommand(.volumeDown) })
-            SegmentButton(systemName: "speaker.slash.fill", action: { onCommand(.mute) })
-            SegmentButton(systemName: "plus", action: { onCommand(.volumeUp) })
+            SegmentButton(systemName: "minus", accessibilityLabel: "Volume Down", action: { onCommand(.volumeDown) })
+            SegmentButton(systemName: "speaker.slash.fill", accessibilityLabel: "Mute", action: { onCommand(.mute) })
+            SegmentButton(systemName: "plus", accessibilityLabel: "Volume Up", action: { onCommand(.volumeUp) })
         }
         .frame(height: 54)
         .background(Capsule().fill(Color.orbitSurface))
@@ -108,6 +120,7 @@ struct VolumePill: View {
 
 private struct SegmentButton: View {
     let systemName: String
+    let accessibilityLabel: String
     let action: () -> Void
 
     var body: some View {
@@ -118,6 +131,7 @@ private struct SegmentButton: View {
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 24))
         .foregroundStyle(.primary)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 
@@ -126,14 +140,14 @@ struct PlaybackRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            mini("backward.end.fill", .rewind)
-            mini("play.fill", .play)
-            mini("pause.fill", .pause)
-            mini("forward.end.fill", .fastForward)
+            mini("backward.fill", "Rewind", .rewind)
+            mini("play.fill", "Play", .play)
+            mini("pause.fill", "Pause", .pause)
+            mini("forward.fill", "Fast Forward", .fastForward)
         }
     }
 
-    private func mini(_ icon: String, _ command: RemoteCommand) -> some View {
+    private func mini(_ icon: String, _ accessibilityLabel: String, _ command: RemoteCommand) -> some View {
         Button {
             onCommand(command)
         } label: {
@@ -146,6 +160,7 @@ struct PlaybackRow: View {
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 23))
         .foregroundStyle(.primary)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 
@@ -191,6 +206,11 @@ struct TouchpadView: View {
             )
             .accessibilityLabel("TV touchpad")
             .accessibilityHint("Swipe to navigate. Double tap to select.")
+            .accessibilityAction(named: "Up") { onCommand(.up) }
+            .accessibilityAction(named: "Down") { onCommand(.down) }
+            .accessibilityAction(named: "Left") { onCommand(.left) }
+            .accessibilityAction(named: "Right") { onCommand(.right) }
+            .accessibilityAction(named: "Select") { onCommand(.select) }
     }
 }
 
@@ -386,6 +406,7 @@ struct RemoteView: View {
             }
             .buttonStyle(OrbitPressStyle(cornerRadius: 22))
             .foregroundStyle(.primary)
+            .accessibilityLabel("More")
         }
     }
 }
