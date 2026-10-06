@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage(AppSettings.Keys.darkMode) private var darkMode = false
 
     @State private var showPremium = false
+    @State private var showManageSubscriptions = false
 
     var body: some View {
         NavigationStack {
@@ -19,7 +20,6 @@ struct SettingsView: View {
                     Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
                     Toggle("Dark Mode", isOn: $darkMode)
                 }
-                .tint(.secondary)
 
                 Section("Remote") {
                     if appModel.purchases.isPremium {
@@ -53,10 +53,9 @@ struct SettingsView: View {
                     .disabled(appModel.purchases.isPurchasing)
 
                     if appModel.purchases.isPremium {
-                        Link(
-                            "Manage Subscription",
-                            destination: URL(string: "https://apps.apple.com/account/subscriptions")!
-                        )
+                        Button("Manage Subscription") {
+                            showManageSubscriptions = true
+                        }
                     }
 
                     if let error = appModel.purchases.errorMessage {
@@ -104,6 +103,10 @@ struct SettingsView: View {
             .sheet(isPresented: $showPremium) {
                 PremiumView()
             }
+            .manageSubscriptionsSheet(
+                isPresented:
+                    $showManageSubscriptions
+            )
         }
     }
 
@@ -234,7 +237,7 @@ struct PremiumView: View {
                         PremiumFeature(
                             icon: "tv.and.mediabox",
                             title: "Multiple TVs & Rooms",
-                            detail: "Keep every TV ready and organize them by room."
+                            detail: "Keep every TV ready and label each one by room."
                         )
 
                         PremiumFeature(

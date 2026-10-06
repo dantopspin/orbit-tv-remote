@@ -2181,8 +2181,7 @@ final class AppModel {
 
         let accepted = commandQueue.enqueue(
             command: command,
-            coalescing:
-                command.coalescesWhilePending
+            coalescing: false
         ) { [weak self, adapter] in
             guard let self,
                   self.currentDevice?.id == deviceID else {

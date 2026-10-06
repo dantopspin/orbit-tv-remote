@@ -172,7 +172,7 @@ struct PlaybackRow: View {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .semibold))
                 .frame(maxWidth: .infinity)
-                .frame(height: 46)
+                .frame(minHeight: 46)
                 .background(Capsule().fill(Color.orbitSurface))
                 .overlay(Capsule().stroke(Color.orbitSeparator, lineWidth: 0.5))
         }
@@ -234,6 +234,7 @@ struct TouchpadView: View {
 
 struct RemoteView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage(AppSettings.Keys.keepScreenAwake) private var keepScreenAwake = true
 
     @State private var mode: RemoteControlMode = .dpad
@@ -252,15 +253,20 @@ struct RemoteView: View {
             let verticalSpacing: CGFloat =
                 isCompactHeight ? 8 : 12
 
-            VStack(spacing: verticalSpacing) {
-                header
+            ScrollView(.vertical) {
+                VStack(spacing: verticalSpacing) {
+                    header
 
                 if let message = appModel.connectionMessage {
                     Text(message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .lineLimit(2)
+                        .lineLimit(
+                            dynamicTypeSize.isAccessibilitySize
+                            ? nil
+                            : 2
+                        )
                         .frame(maxWidth: .infinity)
                         .transition(.opacity)
                 }
@@ -285,7 +291,16 @@ struct RemoteView: View {
                         } label: {
                             Text("Input")
                                 .font(.subheadline.weight(.semibold))
-                                .frame(width: 72, height: 46)
+                                .frame(
+                                    minWidth: 72,
+                                    minHeight: 46
+                                )
+                                .padding(
+                                    .horizontal,
+                                    dynamicTypeSize.isAccessibilitySize
+                                    ? 8
+                                    : 0
+                                )
                                 .background(Capsule().fill(Color.orbitSurface))
                         }
                         .buttonStyle(OrbitPressStyle(cornerRadius: 23))
@@ -327,7 +342,7 @@ struct RemoteView: View {
                     } label: {
                         Label("Back", systemImage: "arrow.uturn.backward")
                             .frame(maxWidth: .infinity)
-                            .frame(height: 46)
+                            .frame(minHeight: 46)
                             .background(Capsule().fill(Color.orbitSurface))
                     }
 
@@ -336,7 +351,7 @@ struct RemoteView: View {
                     } label: {
                         Label("Home", systemImage: "house.fill")
                             .frame(maxWidth: .infinity)
-                            .frame(height: 46)
+                            .frame(minHeight: 46)
                             .background(Capsule().fill(Color.orbitSurface))
                     }
                 }
@@ -363,7 +378,7 @@ struct RemoteView: View {
                             } label: {
                                 Label("Keyboard", systemImage: "keyboard")
                                     .frame(maxWidth: .infinity)
-                                    .frame(height: 44)
+                                    .frame(minHeight: 44)
                             }
                         }
 
@@ -375,7 +390,7 @@ struct RemoteView: View {
                             } label: {
                                 Label("Apps", systemImage: "square.grid.2x2")
                                     .frame(maxWidth: .infinity)
-                                    .frame(height: 44)
+                                    .frame(minHeight: 44)
                             }
                         }
                     }
@@ -386,10 +401,24 @@ struct RemoteView: View {
                     .foregroundStyle(.primary)
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.top, isCompactHeight ? 4 : 8)
-            .padding(.bottom, isCompactHeight ? 8 : 14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.horizontal, 22)
+                .padding(.top, isCompactHeight ? 4 : 8)
+                .padding(
+                    .bottom,
+                    dynamicTypeSize.isAccessibilitySize
+                    ? 24
+                    : (isCompactHeight ? 8 : 14)
+                )
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: proxy.size.height,
+                    alignment: .top
+                )
+            }
+            .scrollIndicators(.hidden)
+            .scrollDisabled(
+                !dynamicTypeSize.isAccessibilitySize
+            )
         }
         .background(Color.orbitBackground.ignoresSafeArea())
         .sheet(isPresented: $showMore) {
@@ -486,7 +515,11 @@ struct RemoteView: View {
             VStack(spacing: 3) {
                 Text(appModel.currentDevice?.name ?? "TV")
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(
+                        dynamicTypeSize.isAccessibilitySize
+                        ? 2
+                        : 1
+                    )
 
                 HStack(spacing: 6) {
                     Circle()
@@ -939,7 +972,7 @@ struct AppsInputsView: View {
                                         ? "star.fill"
                                         : "star"
                                 )
-                                .frame(width: 36, height: 36)
+                                .frame(width: 44, height: 44)
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(.primary)
@@ -1027,7 +1060,7 @@ struct AppsInputsView: View {
                                         ? "star.fill"
                                         : "star"
                                 )
-                                .frame(width: 36, height: 36)
+                                .frame(width: 44, height: 44)
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(.primary)
@@ -1123,12 +1156,30 @@ struct MoreMenuSheet: View {
                 Button("Cancel", role: .cancel) {}
 
                 Button("Save") {
-                    if var device = appModel.currentDevice {
-                        device.name = rename.trimmingCharacters(in: .whitespacesAndNewlines)
-                        appModel.deviceStore.addOrUpdate(device)
-                        appModel.refreshSelection()
+                    guard let device =
+                            appModel.currentDevice else {
+                        return
                     }
+
+                    let trimmed =
+                        rename.trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        )
+
+                    guard !trimmed.isEmpty else {
+                        return
+                    }
+
+                    appModel.deviceStore.rename(
+                        device,
+                        to: trimmed
+                    )
                 }
+                .disabled(
+                    rename.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ).isEmpty
+                )
             }
             .confirmationDialog(
                 "Forget this TV?",
