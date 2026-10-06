@@ -1,0 +1,122 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+/* Begin PBXBuildFile section */
+		9426581CF18434442C0CCB41 /* OrbitCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6866C3C0EEEF54F436AFA877 /* OrbitCore.swift */; };
+		B46191C88860464B549D4323 /* TVModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C28CCE9F6597368C4CE22C6 /* TVModels.swift */; };
+		598AD026B35881C47DB1EC7A /* OrbitApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E72CF597D46CAD26626176F /* OrbitApp.swift */; };
+		1ABA15102CACF94F435B33D3 /* RokuAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C945E9F82201653704D54FAB /* RokuAdapter.swift */; };
+		8A80902EB8F7C8A2FC199449 /* TVServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C41EFDB57B45D7A3E35C7BE /* TVServices.swift */; };
+		2ADF9308758B1CBF7E1E5E41 /* DiscoveryDevicesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ED7F331D74E7B309EFCDF9B /* DiscoveryDevicesView.swift */; };
+		5979A790DAABF72EEA0A7DE5 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B03F97DB6594A6D4358A5AEF /* OnboardingView.swift */; };
+		CFD84E76CD1F72F1A9CB495C /* RemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345E31AC92F25E7ACC109B95 /* RemoteView.swift */; };
+		7DB08CDD46EE6DF5CF517ABD /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95EF04F3438285B625E2C166 /* RootView.swift */; };
+		375D069759044896044E0CD4 /* SettingsPremiumLegal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4363D1B30688A4DF4B6DAC /* SettingsPremiumLegal.swift */; };
+		69BD2B8BC8B37F3EB14DB165 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EEF25E849B7769FF68BE4D51 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+/* Begin PBXFileReference section */
+		6866C3C0EEEF54F436AFA877 /* OrbitCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbitCore.swift; sourceTree = "<group>"; };
+		3C28CCE9F6597368C4CE22C6 /* TVModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVModels.swift; sourceTree = "<group>"; };
+		2E72CF597D46CAD26626176F /* OrbitApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbitApp.swift; sourceTree = "<group>"; };
+		C945E9F82201653704D54FAB /* RokuAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RokuAdapter.swift; sourceTree = "<group>"; };
+		7C41EFDB57B45D7A3E35C7BE /* TVServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVServices.swift; sourceTree = "<group>"; };
+		4ED7F331D74E7B309EFCDF9B /* DiscoveryDevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryDevicesView.swift; sourceTree = "<group>"; };
+		B03F97DB6594A6D4358A5AEF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		345E31AC92F25E7ACC109B95 /* RemoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteView.swift; sourceTree = "<group>"; };
+		95EF04F3438285B625E2C166 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		9B4363D1B30688A4DF4B6DAC /* SettingsPremiumLegal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPremiumLegal.swift; sourceTree = "<group>"; };
+		8A2BD866C9FC44EB694853FA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		EEF25E849B7769FF68BE4D51 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA4ACA445B3FBAF47CDE31AC /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		E2091E2EA993D901A00FB636 /* ARCHITECTURE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ARCHITECTURE.md; sourceTree = "<group>"; };
+		06AA1098890F0026E28E4781 /* MULTICAST.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = MULTICAST.md; sourceTree = "<group>"; };
+		FF73185DE1B469C901F299EA /* STATUS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = STATUS.md; sourceTree = "<group>"; };
+		7A4FF7F962C7F66B27D6CDC6 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		38A007151ABE87CC01A5B6E9 /* Orbit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Orbit.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+/* Begin PBXFrameworksBuildPhase section */
+		7561BFB015D8F536760CB671 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+/* Begin PBXGroup section */
+		B28B7AF69320201D1CF206EB = {isa = PBXGroup; children = (
+			A5E845A936DA1AE03A6BD0E9 /* Orbit */,
+			86E76DCFD8B38CD6265704AD /* Docs */,
+			AA4ACA445B3FBAF47CDE31AC /* README.md */,
+			7A4FF7F962C7F66B27D6CDC6 /* .gitignore */,
+			FBDC4F23F93125BBEEAE800C /* Products */,
+		); sourceTree = "<group>"; };
+		FBDC4F23F93125BBEEAE800C /* Products */ = {isa = PBXGroup; children = (38A007151ABE87CC01A5B6E9 /* Orbit.app */,); name = Products; sourceTree = "<group>"; };
+		A5E845A936DA1AE03A6BD0E9 /* Orbit */ = {isa = PBXGroup; children = (
+			3A0CC373AC07824606A12B9D /* Core */,
+			ABAF22A95ED90B4E21491382 /* Models */,
+			0A0BBFD12C9FB720517EEFC0 /* Services */,
+			C2CA4DF411581B30AA488B68 /* Views */,
+			AEE459B7FBC03CD05945FA07 /* Resources */,
+			2E72CF597D46CAD26626176F /* OrbitApp.swift */,
+		); path = Orbit; sourceTree = "<group>"; };
+		3A0CC373AC07824606A12B9D /* Core */ = {isa = PBXGroup; children = (
+			6866C3C0EEEF54F436AFA877 /* OrbitCore.swift */,
+		); path = Core; sourceTree = "<group>"; };
+		ABAF22A95ED90B4E21491382 /* Models */ = {isa = PBXGroup; children = (
+			3C28CCE9F6597368C4CE22C6 /* TVModels.swift */,
+		); path = Models; sourceTree = "<group>"; };
+		0A0BBFD12C9FB720517EEFC0 /* Services */ = {isa = PBXGroup; children = (
+			C945E9F82201653704D54FAB /* RokuAdapter.swift */,
+			7C41EFDB57B45D7A3E35C7BE /* TVServices.swift */,
+		); path = Services; sourceTree = "<group>"; };
+		C2CA4DF411581B30AA488B68 /* Views */ = {isa = PBXGroup; children = (
+			4ED7F331D74E7B309EFCDF9B /* DiscoveryDevicesView.swift */,
+			B03F97DB6594A6D4358A5AEF /* OnboardingView.swift */,
+			345E31AC92F25E7ACC109B95 /* RemoteView.swift */,
+			95EF04F3438285B625E2C166 /* RootView.swift */,
+			9B4363D1B30688A4DF4B6DAC /* SettingsPremiumLegal.swift */,
+		); path = Views; sourceTree = "<group>"; };
+		AEE459B7FBC03CD05945FA07 /* Resources */ = {isa = PBXGroup; children = (
+			8A2BD866C9FC44EB694853FA /* Info.plist */,
+			EEF25E849B7769FF68BE4D51 /* Assets.xcassets */,
+		); path = Resources; sourceTree = "<group>"; };
+		86E76DCFD8B38CD6265704AD /* Docs */ = {isa = PBXGroup; children = (
+			E2091E2EA993D901A00FB636 /* ARCHITECTURE.md */,
+			06AA1098890F0026E28E4781 /* MULTICAST.md */,
+			FF73185DE1B469C901F299EA /* STATUS.md */,
+		); path = Docs; sourceTree = "<group>"; };
+/* End PBXGroup section */
+/* Begin PBXNativeTarget section */
+		0E8A3AD980EC179856012B7E /* Orbit */ = {isa = PBXNativeTarget; buildConfigurationList = D61E3363DEF3F4E448C68105 /* Build configuration list for PBXNativeTarget "Orbit" */; buildPhases = (BCE16DD0260827ECF338C787 /* Sources */, 7561BFB015D8F536760CB671 /* Frameworks */, 0189424A5A60FED329FA868E /* Resources */); buildRules = (); dependencies = (); name = Orbit; productName = Orbit; productReference = 38A007151ABE87CC01A5B6E9 /* Orbit.app */; productType = "com.apple.product-type.application"; };
+/* End PBXNativeTarget section */
+/* Begin PBXProject section */
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; TargetAttributes = { 0E8A3AD980EC179856012B7E = { CreatedOnToolsVersion = 16.0; }; }; }; buildConfigurationList = 793D6D7C60BD6329D6F91FDB /* Build configuration list for PBXProject "Orbit" */; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = B28B7AF69320201D1CF206EB; productRefGroup = FBDC4F23F93125BBEEAE800C /* Products */; projectDirPath = ""; projectRoot = ""; targets = (0E8A3AD980EC179856012B7E /* Orbit */); };
+/* End PBXProject section */
+/* Begin PBXResourcesBuildPhase section */
+		0189424A5A60FED329FA868E /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (69BD2B8BC8B37F3EB14DB165 /* Assets.xcassets in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+/* Begin PBXSourcesBuildPhase section */
+		BCE16DD0260827ECF338C787 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+			9426581CF18434442C0CCB41 /* OrbitCore.swift in Sources */,
+			B46191C88860464B549D4323 /* TVModels.swift in Sources */,
+			598AD026B35881C47DB1EC7A /* OrbitApp.swift in Sources */,
+			1ABA15102CACF94F435B33D3 /* RokuAdapter.swift in Sources */,
+			8A80902EB8F7C8A2FC199449 /* TVServices.swift in Sources */,
+			2ADF9308758B1CBF7E1E5E41 /* DiscoveryDevicesView.swift in Sources */,
+			5979A790DAABF72EEA0A7DE5 /* OnboardingView.swift in Sources */,
+			CFD84E76CD1F72F1A9CB495C /* RemoteView.swift in Sources */,
+			7DB08CDD46EE6DF5CF517ABD /* RootView.swift in Sources */,
+			375D069759044896044E0CD4 /* SettingsPremiumLegal.swift in Sources */,
+		); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+/* Begin XCBuildConfiguration section */
+		E9EFE2AEA5AD46614D39E809 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)"); ONLY_ACTIVE_ARCH = YES; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; }; name = Debug; };
+		5498D9B96ED2832E04A90C4A /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; SWIFT_COMPILATION_MODE = wholemodule; VALIDATE_PRODUCT = YES; }; name = Release; };
+		C156A3B8932142E3458414EF /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Orbit/Resources/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.dantopspin.orbitremote; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; }; name = Debug; };
+		D9E83874D260F2F10D48D98C /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Orbit/Resources/Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.dantopspin.orbitremote; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; }; name = Release; };
+/* End XCBuildConfiguration section */
+/* Begin XCConfigurationList section */
+		793D6D7C60BD6329D6F91FDB /* Build configuration list for PBXProject "Orbit" */ = {isa = XCConfigurationList; buildConfigurations = (E9EFE2AEA5AD46614D39E809 /* Debug */, 5498D9B96ED2832E04A90C4A /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		D61E3363DEF3F4E448C68105 /* Build configuration list for PBXNativeTarget "Orbit" */ = {isa = XCConfigurationList; buildConfigurations = (C156A3B8932142E3458414EF /* Debug */, D9E83874D260F2F10D48D98C /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}
