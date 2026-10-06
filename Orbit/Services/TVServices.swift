@@ -2040,7 +2040,17 @@ final class AppModel {
                     return
                 }
 
+                let wasVerifyingFreeTV =
+                    self.pendingFreeVerification != nil
+
                 self.abandonPendingFreeVerification()
+
+                if wasVerifyingFreeTV {
+                    self.connectingDeviceID = nil
+                    self.refreshSelection()
+                    return
+                }
+
                 self.connectionState = .unavailable
                 self.currentCapabilities = []
                 self.pairingRequirement = .none
@@ -2177,11 +2187,24 @@ final class AppModel {
         guard requiresPairing else { return }
 
         let activeAdapter = adapter
+        let wasVerifyingFreeTV =
+            pendingFreeVerification != nil
 
         abandonPendingFreeVerification()
+
+        if wasVerifyingFreeTV {
+            pairingRequirement = .none
+            Task {
+                await activeAdapter?.disconnect()
+            }
+            refreshSelection()
+            return
+        }
+
         pairingRequirement = .none
         connectionState = .unavailable
-        lastControlError = "Pairing canceled. Reconnect when you’re ready."
+        lastControlError =
+            "Pairing canceled. Reconnect when you’re ready."
 
         Task {
             await activeAdapter?.disconnect()

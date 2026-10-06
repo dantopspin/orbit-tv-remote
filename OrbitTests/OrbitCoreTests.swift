@@ -485,6 +485,74 @@ final class DeviceStoreTests: XCTestCase {
         )
     }
 
+    func testAndroidProvisionalIPAliasDoesNotMatchStableTV() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+        let stableID =
+            "androidtv-0123456789abcdef0123456789abcdef"
+
+        let saved = TVDevice(
+            id: stableID,
+            name: "Google TV",
+            platform: .androidTV,
+            host: "192.168.1.20",
+            discoveryIDs: [
+                "androidtv-192.168.1.20"
+            ]
+        )
+        store.addOrUpdate(saved)
+
+        let replacementAtReusedIP = TVDevice(
+            id: "androidtv-192.168.1.20",
+            name: "Android TV",
+            platform: .androidTV,
+            host: "192.168.1.20"
+        )
+
+        XCTAssertFalse(
+            store.matchesStoredDevice(
+                replacementAtReusedIP,
+                id: stableID
+            )
+        )
+    }
+
+    func testAndroidBonjourNameIsNotAStableAlias() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+        let stableID =
+            "androidtv-fedcba9876543210fedcba9876543210"
+
+        let saved = TVDevice(
+            id: stableID,
+            name: "Living Room",
+            platform: .androidTV,
+            host: "192.168.1.30",
+            discoveryIDs: [
+                "androidtv-google tv streamer"
+            ]
+        )
+        store.addOrUpdate(saved)
+
+        let anotherStreamer = TVDevice(
+            id: "androidtv-google tv streamer",
+            name: "Google TV Streamer",
+            platform: .androidTV,
+            host: "192.168.1.31"
+        )
+
+        XCTAssertFalse(
+            store.matchesStoredDevice(
+                anotherStreamer,
+                id: stableID
+            )
+        )
+    }
+
     func testRemovingFreeDevicePromotesNextSavedTV() {
         clearDeviceDefaults()
         defer { clearDeviceDefaults() }
