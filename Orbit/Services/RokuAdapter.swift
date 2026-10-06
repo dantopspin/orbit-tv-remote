@@ -42,7 +42,8 @@ final class RokuAdapter: NSObject, TVControlling {
         try await post("keypress/\(key)")
 
         if command == .power, deviceInfo?.isTV == true {
-            deviceInfo?.powerMode = deviceInfo?.isPoweredOff == true ? "PowerOn" : "PowerOff"
+            let wasPoweredOff = deviceInfo?.isPoweredOff == true
+            deviceInfo?.powerMode = wasPoweredOff ? "PowerOn" : "PowerOff"
         }
     }
 
