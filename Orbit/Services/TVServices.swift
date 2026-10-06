@@ -206,18 +206,37 @@ final class DiscoveryService {
     private(set) var isSearching = false
     var lastError: String?
 
+    @ObservationIgnored private var scanTask: Task<Void, Never>?
+
     func startScan() {
+        scanTask?.cancel()
+
         isSearching = true
         lastError = nil
         devices = []
 
-        Task {
-            try? await Task.sleep(nanoseconds: 2_200_000_000)
-            if !Task.isCancelled { isSearching = false }
+        scanTask = Task { [weak self] in
+            let responses = await SSDPScanner.scan(timeout: 1.8)
+
+            guard !Task.isCancelled, let self else { return }
+
+            var discovered: [String: TVDevice] = [:]
+
+            for response in responses {
+                guard let device = self.device(from: response) else { continue }
+                discovered[device.id] = device
+            }
+
+            self.devices = discovered.values.sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+            self.isSearching = false
         }
     }
 
     func stopScan() {
+        scanTask?.cancel()
+        scanTask = nil
         isSearching = false
     }
 
@@ -300,6 +319,72 @@ final class DiscoveryService {
             return connectedDevice
         } catch {
             lastError = "Orbit couldn’t identify a supported TV at that address."
+            return nil
+        }
+    }
+
+    private func device(from response: SSDPResponse) -> TVDevice? {
+        guard let host = response.location.host else { return nil }
+
+        switch response.platformHint {
+        case .roku:
+            return TVDevice(
+                id: "roku-\(response.usn ?? host)",
+                name: "Roku",
+                platform: .roku,
+                host: host,
+                port: response.location.port ?? 8060,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .appLaunching,
+                    .playback
+                ]
+            )
+
+        case .samsung:
+            return TVDevice(
+                id: "samsung-\(response.usn ?? host)",
+                name: "Samsung TV",
+                platform: .samsung,
+                host: host,
+                port: 8002,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .inputSelection,
+                    .playback,
+                    .channels
+                ]
+            )
+
+        case .lgWebOS:
+            return TVDevice(
+                id: "lg-\(response.usn ?? host)",
+                name: "LG TV",
+                platform: .lgWebOS,
+                host: host,
+                port: 3001,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .inputSelection,
+                    .appLaunching,
+                    .playback,
+                    .channels
+                ]
+            )
+
+        default:
             return nil
         }
     }
