@@ -17,40 +17,39 @@ final class RokuAdapter: NSObject, TVControlling {
         self.session = session ?? Self.localSession
     }
 
-    func probe() async -> Bool {
-        guard let url = endpoint("query/device-info") else { return false }
-
-        do {
-            let (_, response) = try await session.data(from: url)
-            return (response as? HTTPURLResponse)?.statusCode == 200
-        } catch {
-            return false
+    func connect() async throws -> TVConnectionInfo {
+        guard let url = endpoint("query/device-info") else {
+            throw TVControlError.invalidResponse
         }
+
+        let (_, response) = try await session.data(from: url)
+        guard let http = response as? HTTPURLResponse else {
+            throw TVControlError.invalidResponse
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            throw TVControlError.unreachable
+        }
+
+        return TVConnectionInfo(
+            state: .connected,
+            capabilities: device.capabilities,
+            pairingRequirement: .none
+        )
+    }
+
+    func beginPress(_ command: RemoteCommand) async throws {
+        let key = try key(for: command)
+        try await post("keydown/\(key)")
+    }
+
+    func endPress(_ command: RemoteCommand) async throws {
+        let key = try key(for: command)
+        try await post("keyup/\(key)")
     }
 
     func send(_ command: RemoteCommand) async throws {
-        let key: String
-
-        switch command {
-        case .power: key = "PowerOff"
-        case .up: key = "Up"
-        case .down: key = "Down"
-        case .left: key = "Left"
-        case .right: key = "Right"
-        case .select: key = "Select"
-        case .back: key = "Back"
-        case .home: key = "Home"
-        case .volumeUp: key = "VolumeUp"
-        case .volumeDown: key = "VolumeDown"
-        case .mute: key = "VolumeMute"
-        case .rewind: key = "Rev"
-        case .play, .pause: key = "Play"
-        case .fastForward: key = "Fwd"
-        case .channelUp: key = "ChannelUp"
-        case .channelDown: key = "ChannelDown"
-        }
-
-        try await post("keypress/\(key)")
+        try await post("keypress/\(try key(for: command))")
     }
 
     func send(text: String) async throws {
@@ -108,6 +107,27 @@ final class RokuAdapter: NSObject, TVControlling {
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else {
             throw TVControlError.unreachable
+        }
+    }
+
+    private func key(for command: RemoteCommand) throws -> String {
+        switch command {
+        case .power: return "PowerOff"
+        case .up: return "Up"
+        case .down: return "Down"
+        case .left: return "Left"
+        case .right: return "Right"
+        case .select: return "Select"
+        case .back: return "Back"
+        case .home: return "Home"
+        case .volumeUp: return "VolumeUp"
+        case .volumeDown: return "VolumeDown"
+        case .mute: return "VolumeMute"
+        case .rewind: return "Rev"
+        case .play, .pause: return "Play"
+        case .fastForward: return "Fwd"
+        case .channelUp: return "ChannelUp"
+        case .channelDown: return "ChannelDown"
         }
     }
 

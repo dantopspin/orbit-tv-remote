@@ -31,6 +31,14 @@ final class DeviceStore {
         persist()
     }
 
+    func updateCapabilities(for deviceID: String, capabilities: Set<TVCapability>) {
+        guard let index = devices.firstIndex(where: { $0.id == deviceID }) else { return }
+        guard devices[index].capabilities != capabilities else { return }
+
+        devices[index].capabilities = capabilities
+        persist()
+    }
+
     func rename(_ device: TVDevice, to name: String) {
         guard let index = devices.firstIndex(where: { $0.id == device.id }) else { return }
         devices[index].name = name
@@ -66,13 +74,42 @@ final class DeviceStore {
 
 protocol TVControlling: AnyObject {
     var device: TVDevice { get }
-    func probe() async -> Bool
+
+    func connect() async throws -> TVConnectionInfo
+    func disconnect() async
+
+    func pairingRequirement() async throws -> TVPairingRequirement
+    func pair(using response: TVPairingResponse) async throws
+
     func send(_ command: RemoteCommand) async throws
+    func beginPress(_ command: RemoteCommand) async throws
+    func endPress(_ command: RemoteCommand) async throws
     func send(text: String) async throws
+
     func apps() async throws -> [TVApp]
     func inputs() async throws -> [TVInput]
     func launch(app: TVApp) async throws
     func select(input: TVInput) async throws
+}
+
+extension TVControlling {
+    func disconnect() async {}
+
+    func pairingRequirement() async throws -> TVPairingRequirement {
+        .none
+    }
+
+    func pair(using response: TVPairingResponse) async throws {
+        guard case .none = try await pairingRequirement() else {
+            throw TVControlError.unsupported
+        }
+    }
+
+    func beginPress(_ command: RemoteCommand) async throws {
+        try await send(command)
+    }
+
+    func endPress(_ command: RemoteCommand) async throws {}
 }
 
 enum TVControlError: LocalizedError {
@@ -105,7 +142,7 @@ final class UnsupportedTVAdapter: TVControlling {
 
     init(device: TVDevice) { self.device = device }
 
-    func probe() async -> Bool { false }
+    func connect() async throws -> TVConnectionInfo { throw TVControlError.unsupported }
     func send(_ command: RemoteCommand) async throws { throw TVControlError.unsupported }
     func send(text: String) async throws { throw TVControlError.unsupported }
     func apps() async throws -> [TVApp] { [] }
@@ -157,14 +194,19 @@ final class DiscoveryService {
         )
 
         let adapter = RokuAdapter(device: candidate)
-        if await adapter.probe() {
-            devices.removeAll { $0.id == candidate.id }
-            devices.append(candidate)
-            return candidate
-        }
 
-        lastError = "No compatible Roku device responded at that address."
-        return nil
+        do {
+            let connection = try await adapter.connect()
+            var connectedDevice = candidate
+            connectedDevice.capabilities = connection.capabilities
+
+            devices.removeAll { $0.id == connectedDevice.id }
+            devices.append(connectedDevice)
+            return connectedDevice
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
     }
 }
 
@@ -341,6 +383,8 @@ private final class RemoteCommandQueue {
 @Observable
 final class AppModel {
     var connectionState: TVConnectionState = .connecting
+    var currentCapabilities: Set<TVCapability> = []
+    var pairingRequirement: TVPairingRequirement = .none
     var lastControlError: String?
 
     let deviceStore = DeviceStore()
@@ -371,6 +415,8 @@ final class AppModel {
         guard let device = currentDevice else {
             adapter = nil
             connectionState = .connecting
+            currentCapabilities = []
+            pairingRequirement = .none
             return
         }
 
@@ -386,17 +432,36 @@ final class AppModel {
         lastControlError = nil
 
         connectTask = Task { @MainActor [weak self, adapter] in
-            let reachable = await adapter.probe()
+            do {
+                let connection = try await adapter.connect()
 
-            guard !Task.isCancelled,
-                  let self,
-                  self.currentDevice?.id == deviceID else {
+                guard !Task.isCancelled,
+                      let self,
+                      self.currentDevice?.id == deviceID else {
+                    return
+                }
+
+                self.connectionState = connection.state
+                self.currentCapabilities = connection.capabilities
+                self.pairingRequirement = connection.pairingRequirement
+                self.deviceStore.updateCapabilities(
+                    for: deviceID,
+                    capabilities: connection.capabilities
+                )
+                self.lastControlError = nil
+            } catch is CancellationError {
                 return
-            }
+            } catch {
+                guard !Task.isCancelled,
+                      let self,
+                      self.currentDevice?.id == deviceID else {
+                    return
+                }
 
-            self.connectionState = reachable ? .connected : .unavailable
-            if !reachable {
-                self.lastControlError = TVControlError.unreachable.localizedDescription
+                self.connectionState = .unavailable
+                self.currentCapabilities = []
+                self.pairingRequirement = .none
+                self.lastControlError = error.localizedDescription
             }
         }
     }
@@ -514,6 +579,8 @@ final class AppModel {
             refreshSelection()
         } else {
             connectionState = .connecting
+            currentCapabilities = []
+            pairingRequirement = .none
             lastControlError = nil
         }
     }
@@ -522,6 +589,8 @@ final class AppModel {
         connectTask?.cancel()
         commandQueue.cancel()
         adapter = currentDevice.map(TVAdapterFactory.makeAdapter)
+        currentCapabilities = currentDevice?.capabilities ?? []
+        pairingRequirement = .none
         lastControlError = nil
 
         if currentDevice != nil {

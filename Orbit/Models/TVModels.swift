@@ -113,3 +113,31 @@ enum TVConnectionState: Equatable, Sendable {
         }
     }
 }
+
+
+enum TVPairingRequirement: Equatable, Sendable {
+    case none
+    case confirmation(message: String?)
+    case pin(length: Int?, message: String?)
+}
+
+enum TVPairingResponse: Equatable, Sendable {
+    case confirmed
+    case pin(String)
+}
+
+struct TVConnectionInfo: Equatable, Sendable {
+    var state: TVConnectionState
+    var capabilities: Set<TVCapability>
+    var pairingRequirement: TVPairingRequirement
+
+    init(
+        state: TVConnectionState = .connected,
+        capabilities: Set<TVCapability>,
+        pairingRequirement: TVPairingRequirement = .none
+    ) {
+        self.state = state
+        self.capabilities = capabilities
+        self.pairingRequirement = pairingRequirement
+    }
+}
