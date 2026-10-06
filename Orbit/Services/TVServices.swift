@@ -1777,6 +1777,12 @@ final class AppModel {
                     device: device
                 ).identify()
 
+        case .androidTV:
+            identified =
+                try? await AndroidTVAdapter(
+                    device: device
+                ).identifyForSelection()
+
         case .lgWebOS:
             identified =
                 try? await LGWebOSAdapter(

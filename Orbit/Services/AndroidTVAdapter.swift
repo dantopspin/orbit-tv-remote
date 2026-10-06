@@ -26,6 +26,39 @@ final class AndroidTVAdapter: TVControlling {
         self.device = device
     }
 
+    func identifyForSelection() async throws -> TVDevice {
+        try prepareProtocolManagersIfNeeded()
+
+        do {
+            try await connectRemote()
+            let identified = device
+
+            remoteGeneration += 1
+            remoteManager?.stateChanged = nil
+            remoteManager?.disconnect()
+            remoteManager = nil
+            return identified
+        } catch {
+            // The server certificate is presented during the TLS attempt.
+            // Its public key gives Orbit a stable physical-TV identity
+            // without starting Android TV's pairing UI.
+            resolveStableIdentityFromServerKey()
+
+            remoteGeneration += 1
+            remoteManager?.stateChanged = nil
+            remoteManager?.disconnect()
+            remoteManager = nil
+
+            if Self.isStableIdentity(
+                device.id
+            ) {
+                return device
+            }
+
+            throw error
+        }
+    }
+
     func connect() async throws -> TVConnectionInfo {
         try prepareProtocolManagersIfNeeded()
 
