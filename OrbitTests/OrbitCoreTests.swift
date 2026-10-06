@@ -149,12 +149,16 @@ final class DeviceStoreTests: XCTestCase {
 
         let store = DeviceStore()
 
+        let discoveryAlias =
+            "samsung-uuid:ssdp-123"
+
         let manuallyResolved = TVDevice(
             id: "samsung-hardware-123",
             name: "Living Room",
             platform: .samsung,
             host: "192.168.1.10",
             roomName: "Living Room",
+            discoveryIDs: [discoveryAlias],
             capabilities: [
                 .directionalNavigation,
                 .power
@@ -164,7 +168,7 @@ final class DeviceStoreTests: XCTestCase {
         store.addOrUpdate(manuallyResolved)
 
         let firstDiscovery = TVDevice(
-            id: "samsung-uuid:ssdp-123",
+            id: discoveryAlias,
             name: "Samsung TV",
             platform: .samsung,
             host: "192.168.1.10",
@@ -184,9 +188,16 @@ final class DeviceStoreTests: XCTestCase {
             store.selectedDevice?.id,
             manuallyResolved.id
         )
+        XCTAssertTrue(
+            store.selectedDevice?
+                .discoveryAliases
+                .contains(
+                    firstDiscovery.id
+                ) == true
+        )
         XCTAssertEqual(
-            store.selectedDevice?.discoveryID,
-            firstDiscovery.id
+            store.selectedDevice?.port,
+            8002
         )
         XCTAssertEqual(
             store.selectedDevice?.name,
@@ -262,6 +273,139 @@ final class DeviceStoreTests: XCTestCase {
         XCTAssertEqual(
             store.selectedDeviceID,
             saved.id
+        )
+    }
+
+    func testDifferentTVAtReusedHostDoesNotMerge() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+
+        let first = TVDevice(
+            id: "samsung-runtime-a",
+            name: "Old TV",
+            platform: .samsung,
+            host: "192.168.1.24",
+            discoveryIDs: [
+                "samsung-uuid-a"
+            ]
+        )
+        store.addOrUpdate(first)
+
+        let replacement = TVDevice(
+            id: "samsung-uuid-b",
+            name: "Samsung TV",
+            platform: .samsung,
+            host: "192.168.1.24",
+            port: 8002
+        )
+
+        let changes = store.refreshKnownDevices(
+            from: [replacement]
+        )
+
+        XCTAssertTrue(changes.isEmpty)
+        XCTAssertEqual(
+            store.devices.count,
+            1
+        )
+        XCTAssertEqual(
+            store.devices.first?.id,
+            first.id
+        )
+        XCTAssertFalse(
+            store.devices.first?
+                .discoveryAliases
+                .contains(
+                    replacement.id
+                ) == true
+        )
+    }
+
+    func testNonDefaultLearnedPortCountsAsEndpointMovement() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+        let alias = "samsung-uuid-port"
+
+        let saved = TVDevice(
+            id: "samsung-runtime-port",
+            name: "Samsung TV",
+            platform: .samsung,
+            host: "192.168.1.30",
+            discoveryIDs: [alias]
+        )
+        store.addOrUpdate(saved)
+
+        let discovered = TVDevice(
+            id: alias,
+            name: "Samsung TV",
+            platform: .samsung,
+            host: "192.168.1.30",
+            port: 9000
+        )
+
+        let changes = store.refreshKnownDevices(
+            from: [discovered]
+        )
+
+        XCTAssertEqual(
+            changes,
+            [saved.id]
+        )
+        XCTAssertEqual(
+            store.selectedDevice?.port,
+            9000
+        )
+    }
+
+    func testDiscoveryAliasesAccumulateWithoutOverwrite() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+
+        let saved = TVDevice(
+            id: "lg-runtime-1",
+            name: "LG TV",
+            platform: .lgWebOS,
+            host: "192.168.1.40",
+            discoveryIDs: [
+                "lg-uuid-a",
+                "lg-uuid-b"
+            ]
+        )
+        store.addOrUpdate(saved)
+
+        let rediscovered = TVDevice(
+            id: "lg-uuid-b",
+            name: "LG TV",
+            platform: .lgWebOS,
+            host: "192.168.1.41",
+            port: 3001,
+            discoveryIDs: [
+                "lg-uuid-c"
+            ]
+        )
+
+        _ = store.addOrUpdate(
+            rediscovered
+        )
+
+        XCTAssertEqual(
+            store.devices.count,
+            1
+        )
+        XCTAssertEqual(
+            store.selectedDevice?
+                .discoveryAliases,
+            [
+                "lg-uuid-a",
+                "lg-uuid-b",
+                "lg-uuid-c"
+            ]
         )
     }
 

@@ -70,7 +70,20 @@ final class DeviceStore {
 
         var merged = resolvedDevice
         merged.roomName = previous.roomName
-        merged.discoveryID = previous.discoveryID
+        merged.formDiscoveryAliases(
+            previous.discoveryAliases
+        )
+
+        if oldDeviceID != resolvedDevice.id,
+           !Self.isProvisionalIdentity(
+               oldDeviceID,
+               platform: previous.platform,
+               host: previous.host
+           ) {
+            merged.formDiscoveryAliases(
+                [oldDeviceID]
+            )
+        }
 
         if !genericNames.contains(previous.name) {
             merged.name = previous.name
@@ -122,7 +135,11 @@ final class DeviceStore {
             )
 
             if previous.host != merged.host ||
-                previous.port != merged.port {
+                effectivePort(
+                    for: previous
+                ) != effectivePort(
+                    for: merged
+                ) {
                 endpointChanges.insert(previous.id)
             }
 
@@ -148,21 +165,25 @@ final class DeviceStore {
             return exact
         }
 
-        if let alias = devices.firstIndex(
-            where: {
-                $0.discoveryID == incoming.id ||
-                (
-                    incoming.discoveryID != nil &&
-                    $0.id == incoming.discoveryID
-                )
-            }
-        ) {
-            return alias
-        }
+        let incomingAliases =
+            incoming.discoveryAliases.union(
+                [incoming.id]
+            )
 
-        return devices.firstIndex {
-            $0.platform == incoming.platform &&
-            $0.host == incoming.host
+        return devices.firstIndex { saved in
+            guard saved.platform ==
+                    incoming.platform else {
+                return false
+            }
+
+            let savedAliases =
+                saved.discoveryAliases.union(
+                    [saved.id]
+                )
+
+            return !savedAliases.isDisjoint(
+                with: incomingAliases
+            )
         }
     }
 
@@ -174,12 +195,17 @@ final class DeviceStore {
         merged.host = incoming.host
         merged.port = incoming.port ?? previous.port
 
-        if previous.id != incoming.id,
-           previous.discoveryID != incoming.id {
-            merged.discoveryID = incoming.id
-        } else if let incomingDiscoveryID =
-                    incoming.discoveryID {
-            merged.discoveryID = incomingDiscoveryID
+        merged.formDiscoveryAliases(
+            previous.discoveryAliases
+                .union(
+                    incoming.discoveryAliases
+                )
+        )
+
+        if previous.id != incoming.id {
+            merged.formDiscoveryAliases(
+                [incoming.id]
+            )
         }
 
         let genericNames: Set<String> = [
@@ -204,6 +230,60 @@ final class DeviceStore {
         }
 
         return merged
+    }
+
+    private func effectivePort(
+        for device: TVDevice
+    ) -> Int? {
+        device.port ??
+            Self.defaultPort(
+                for: device.platform
+            )
+    }
+
+    private static func defaultPort(
+        for platform: TVPlatform
+    ) -> Int? {
+        switch platform {
+        case .roku:
+            return 8060
+        case .samsung:
+            return 8002
+        case .lgWebOS:
+            return 3001
+        case .androidTV:
+            return 6466
+        case .fireTV:
+            return 8080
+        default:
+            return nil
+        }
+    }
+
+    private static func isProvisionalIdentity(
+        _ id: String,
+        platform: TVPlatform,
+        host: String
+    ) -> Bool {
+        let prefix: String
+
+        switch platform {
+        case .roku:
+            prefix = "roku"
+        case .samsung:
+            prefix = "samsung"
+        case .lgWebOS:
+            prefix = "lg"
+        case .androidTV:
+            prefix = "androidtv"
+        case .fireTV:
+            prefix = "firetv"
+        default:
+            return false
+        }
+
+        return id.lowercased() ==
+            "\(prefix)-\(host.lowercased())"
     }
 
     func remove(_ device: TVDevice) {
@@ -527,7 +607,7 @@ final class DiscoveryService {
             )
 
         if androidPairingReachable || androidRemoteReachable {
-            let androidCandidate = TVDevice(
+            var androidCandidate = TVDevice(
                 id: "androidtv-\(trimmed)",
                 name: "Android TV",
                 platform: .androidTV,
@@ -544,6 +624,18 @@ final class DiscoveryService {
                     .channels
                 ]
             )
+
+            if let discoveredAlias = devices.first(
+                where: {
+                    $0.platform == .androidTV &&
+                    $0.host == trimmed &&
+                    $0.id != androidCandidate.id
+                }
+            )?.id {
+                androidCandidate.formDiscoveryAliases(
+                    [discoveredAlias]
+                )
+            }
 
             devices.removeAll {
                 $0.id == androidCandidate.id
@@ -629,7 +721,21 @@ final class DiscoveryService {
 
             do {
                 _ = try await samsung.connect()
-                let connectedDevice = samsung.device
+                var connectedDevice = samsung.device
+
+                if let discoveredAlias = devices.first(
+                    where: {
+                        $0.platform == .samsung &&
+                        $0.host == trimmed &&
+                        $0.id != connectedDevice.id
+                    }
+                )?.id {
+                    connectedDevice.formDiscoveryAliases(
+                        [discoveredAlias]
+                    )
+                }
+
+                await samsung.disconnect()
 
                 devices.removeAll {
                     $0.id == connectedDevice.id
@@ -662,7 +768,21 @@ final class DiscoveryService {
 
             do {
                 _ = try await lg.connect()
-                let connectedDevice = lg.device
+                var connectedDevice = lg.device
+
+                if let discoveredAlias = devices.first(
+                    where: {
+                        $0.platform == .lgWebOS &&
+                        $0.host == trimmed &&
+                        $0.id != connectedDevice.id
+                    }
+                )?.id {
+                    connectedDevice.formDiscoveryAliases(
+                        [discoveredAlias]
+                    )
+                }
+
+                await lg.disconnect()
 
                 devices.removeAll {
                     $0.id == connectedDevice.id
@@ -1121,18 +1241,29 @@ final class RemoteFavoritesStore {
 
 @MainActor
 private final class RemoteCommandQueue {
-    private let maxPendingCommands = 6
-
     private var tail: Task<Void, Never>?
-    private var pendingCount = 0
+    private var pendingCoalescedCommands:
+        Set<RemoteCommand> = []
     private var generation = 0
 
-    func enqueue(_ operation: @escaping @MainActor () async -> Void) {
-        guard pendingCount < maxPendingCommands else {
-            return
+    @discardableResult
+    func enqueue(
+        command: RemoteCommand,
+        coalescing: Bool,
+        _ operation: @escaping @MainActor () async -> Void
+    ) -> Bool {
+        if coalescing,
+           pendingCoalescedCommands.contains(
+               command
+           ) {
+            return false
         }
 
-        pendingCount += 1
+        if coalescing {
+            pendingCoalescedCommands.insert(
+                command
+            )
+        }
 
         let previous = tail
         let currentGeneration = generation
@@ -1145,16 +1276,18 @@ private final class RemoteCommandQueue {
             guard let self else { return }
 
             defer {
-                if self.generation == currentGeneration {
-                    self.pendingCount = max(
-                        0,
-                        self.pendingCount - 1
+                if self.generation ==
+                    currentGeneration,
+                   coalescing {
+                    self.pendingCoalescedCommands.remove(
+                        command
                     )
                 }
             }
 
             guard !Task.isCancelled,
-                  self.generation == currentGeneration else {
+                  self.generation ==
+                    currentGeneration else {
                 return
             }
 
@@ -1162,6 +1295,7 @@ private final class RemoteCommandQueue {
         }
 
         tail = next
+        return true
     }
 
     func enqueueAndWait(
@@ -1206,7 +1340,7 @@ private final class RemoteCommandQueue {
         generation += 1
         tail?.cancel()
         tail = nil
-        pendingCount = 0
+        pendingCoalescedCommands.removeAll()
     }
 }
 
@@ -1561,10 +1695,13 @@ final class AppModel {
     func send(_ command: RemoteCommand) {
         guard let adapter else { return }
 
-        Haptics.shared.tap()
         let deviceID = adapter.device.id
 
-        commandQueue.enqueue { [weak self, adapter] in
+        let accepted = commandQueue.enqueue(
+            command: command,
+            coalescing:
+                command.coalescesWhilePending
+        ) { [weak self, adapter] in
             guard let self,
                   self.currentDevice?.id == deviceID else {
                 return
@@ -1573,17 +1710,25 @@ final class AppModel {
             do {
                 try await adapter.send(command)
 
-                guard self.currentDevice?.id == deviceID else { return }
+                guard self.currentDevice?.id == deviceID else {
+                    return
+                }
 
                 self.lastControlError = nil
                 self.connectionState = .connected
             } catch is CancellationError {
                 return
             } catch {
-                guard self.currentDevice?.id == deviceID else { return }
+                guard self.currentDevice?.id == deviceID else {
+                    return
+                }
 
                 self.applyControlError(error)
             }
+        }
+
+        if accepted {
+            Haptics.shared.tap()
         }
     }
 
@@ -1647,8 +1792,7 @@ final class AppModel {
         } catch is CancellationError {
             return
         } catch {
-            lastControlError = error.localizedDescription
-            connectionState = .unavailable
+            applyControlError(error)
         }
     }
 

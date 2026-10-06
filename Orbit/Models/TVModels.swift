@@ -48,6 +48,7 @@ struct TVDevice: Identifiable, Codable, Hashable, Sendable {
     var port: Int?
     var roomName: String?
     var discoveryID: String?
+    var discoveryIDs: Set<String>?
     var capabilities: Set<TVCapability>
 
     init(
@@ -58,6 +59,7 @@ struct TVDevice: Identifiable, Codable, Hashable, Sendable {
         port: Int? = nil,
         roomName: String? = nil,
         discoveryID: String? = nil,
+        discoveryIDs: Set<String>? = nil,
         capabilities: Set<TVCapability> = []
     ) {
         self.id = id
@@ -67,11 +69,39 @@ struct TVDevice: Identifiable, Codable, Hashable, Sendable {
         self.port = port
         self.roomName = roomName
         self.discoveryID = discoveryID
+        self.discoveryIDs = discoveryIDs
         self.capabilities = capabilities
+    }
+
+    var discoveryAliases: Set<String> {
+        var aliases = discoveryIDs ?? []
+
+        if let discoveryID,
+           !discoveryID.isEmpty {
+            aliases.insert(discoveryID)
+        }
+
+        return aliases
+    }
+
+    mutating func formDiscoveryAliases(
+        _ aliases: Set<String>
+    ) {
+        var merged = discoveryAliases
+        merged.formUnion(
+            aliases.filter { !$0.isEmpty }
+        )
+
+        discoveryIDs =
+            merged.isEmpty ? nil : merged
+
+        // New writes use the alias set. Keep the legacy field only for
+        // decoding existing installs.
+        discoveryID = nil
     }
 }
 
-enum RemoteCommand: String, CaseIterable, Sendable {
+enum RemoteCommand: String, CaseIterable, Hashable, Sendable {
     case power
     case up
     case down
@@ -89,6 +119,17 @@ enum RemoteCommand: String, CaseIterable, Sendable {
     case fastForward
     case channelUp
     case channelDown
+
+    var coalescesWhilePending: Bool {
+        switch self {
+        case .up, .down, .left, .right,
+             .volumeUp, .volumeDown,
+             .channelUp, .channelDown:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 struct TVApp: Identifiable, Hashable, Sendable {
