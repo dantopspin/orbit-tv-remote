@@ -1,0 +1,19 @@
+name: iOS Build
+
+on:
+  push:
+    branches:
+      - main
+      - build/**
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Orbit
+        run: |
+          xcodebuild             -project Orbit.xcodeproj             -scheme Orbit             -configuration Debug             -sdk iphonesimulator             -destination 'generic/platform=iOS Simulator'             CODE_SIGNING_ALLOWED=NO             build
