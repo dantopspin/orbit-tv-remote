@@ -33,3 +33,10 @@ Engineering priority after the shared control lifecycle is stable:
 7. Philips variants
 
 Each adapter must report runtime capabilities so Orbit can keep the main remote clean and hide unsupported controls.
+
+
+## Fire TV
+
+Orbit contains an initial Fire TV Lightning protocol adapter based on community interoperability research of the current Fire TV mobile remote behavior. It uses the local PIN-pairing flow, HTTPS control service on port 8080 and the DIAL wake endpoint on port 8009.
+
+This is not a stable public Amazon remote-control SDK. Treat Fire TV support as development-only until it has been exercised on representative Fire TV Stick, Cube and Fire TV television hardware and rechecked against current Amazon policy.

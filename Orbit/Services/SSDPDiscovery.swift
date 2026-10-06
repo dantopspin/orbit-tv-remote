@@ -32,6 +32,11 @@ struct SSDPResponse: Hashable, Sendable {
             return .lgWebOS
         }
 
+        if fingerprint.contains("firetv") ||
+            fingerprint.contains("fire tv") {
+            return .fireTV
+        }
+
         return nil
     }
 }

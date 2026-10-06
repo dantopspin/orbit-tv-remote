@@ -181,6 +181,8 @@ enum TVAdapterFactory {
             return LGWebOSAdapter(device: device)
         case .androidTV:
             return AndroidTVAdapter(device: device)
+        case .fireTV:
+            return FireTVAdapter(device: device)
         default:
             return UnsupportedTVAdapter(device: device)
         }
@@ -303,6 +305,36 @@ final class DiscoveryService {
             }
             devices.append(androidCandidate)
             return androidCandidate
+        }
+
+        let fireCandidate = TVDevice(
+            id: "firetv-\(trimmed)",
+            name: "Fire TV",
+            platform: .fireTV,
+            host: trimmed,
+            port: 8080,
+            capabilities: [
+                .directionalNavigation,
+                .touchpad,
+                .keyboard,
+                .power,
+                .volume,
+                .mute,
+                .appLaunching,
+                .playback
+            ]
+        )
+
+        let fireTV = FireTVAdapter(
+            device: fireCandidate
+        )
+
+        if await fireTV.probeWakeEndpoint() {
+            devices.removeAll {
+                $0.id == fireCandidate.id
+            }
+            devices.append(fireCandidate)
+            return fireCandidate
         }
 
         let samsungCandidate = TVDevice(
@@ -434,6 +466,25 @@ final class DiscoveryService {
                     .appLaunching,
                     .playback,
                     .channels
+                ]
+            )
+
+        case .fireTV:
+            return TVDevice(
+                id: "firetv-\(response.usn ?? host)",
+                name: "Fire TV",
+                platform: .fireTV,
+                host: host,
+                port: 8080,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .appLaunching,
+                    .playback
                 ]
             )
 
@@ -847,6 +898,11 @@ final class AppModel {
                     return "Enter the code shown on your TV."
                 }
                 return "Connecting to Android TV…"
+            case .fireTV:
+                if requiresPairing {
+                    return "Enter the 4-digit code shown on your Fire TV."
+                }
+                return "Connecting to Fire TV…"
             default:
                 return nil
             }

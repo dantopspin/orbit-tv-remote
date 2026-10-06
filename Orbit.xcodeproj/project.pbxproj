@@ -23,6 +23,7 @@
 		A7D91F4E12B34010A0000001 /* AndroidTVIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D91F4E12B34010A0000011 /* AndroidTVIdentity.swift */; };
 		A7D91F4E12B34010A0000002 /* AndroidTVAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D91F4E12B34010A0000012 /* AndroidTVAdapter.swift */; };
 		A7D91F4E12B34010A0000004 /* AndroidTVDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D91F4E12B34010A0000014 /* AndroidTVDiscovery.swift */; };
+		F1A2B3C4D5E60718293A4B5C /* FireTVAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E60718293A4B6C /* FireTVAdapter.swift */; };
 		A7D91F4E12B34010A0000003 /* AndroidTVRemoteControl in Frameworks */ = {isa = PBXBuildFile; productRef = A7D91F4E12B34010A0000031 /* AndroidTVRemoteControl */; };
 /* End PBXBuildFile section */
 /* Begin PBXFileReference section */
@@ -51,6 +52,7 @@
 		A7D91F4E12B34010A0000011 /* AndroidTVIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndroidTVIdentity.swift; sourceTree = "<group>"; };
 		A7D91F4E12B34010A0000012 /* AndroidTVAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndroidTVAdapter.swift; sourceTree = "<group>"; };
 		A7D91F4E12B34010A0000014 /* AndroidTVDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndroidTVDiscovery.swift; sourceTree = "<group>"; };
+		F1A2B3C4D5E60718293A4B6C /* FireTVAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireTVAdapter.swift; sourceTree = "<group>"; };
 		A7D91F4E12B34010A0000013 /* THIRD_PARTY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = THIRD_PARTY.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 /* Begin PBXFrameworksBuildPhase section */
@@ -85,6 +87,7 @@
 			A7D91F4E12B34010A0000011 /* AndroidTVIdentity.swift */,
 			A7D91F4E12B34010A0000012 /* AndroidTVAdapter.swift */,
 			A7D91F4E12B34010A0000014 /* AndroidTVDiscovery.swift */,
+			F1A2B3C4D5E60718293A4B6C /* FireTVAdapter.swift */,
 			234567890ABCDEF123456789 /* SSDPDiscovery.swift */,
 			F102132435465768A9B0C1D2 /* LGWebOSAdapter.swift */,
 			B1C2D3E4F5061728394A5B6C /* SamsungTizenAdapter.swift */,
@@ -134,6 +137,7 @@
 			A7D91F4E12B34010A0000001 /* AndroidTVIdentity.swift in Sources */,
 			A7D91F4E12B34010A0000002 /* AndroidTVAdapter.swift in Sources */,
 			A7D91F4E12B34010A0000004 /* AndroidTVDiscovery.swift in Sources */,
+			F1A2B3C4D5E60718293A4B5C /* FireTVAdapter.swift in Sources */,
 			8A80902EB8F7C8A2FC199449 /* TVServices.swift in Sources */,
 			2ADF9308758B1CBF7E1E5E41 /* DiscoveryDevicesView.swift in Sources */,
 			5979A790DAABF72EEA0A7DE5 /* OnboardingView.swift in Sources */,
