@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import Security
 
@@ -856,3 +857,5 @@ private final class FireTVLocalTrustDelegate:
         return false
     }
 }
+
+#endif

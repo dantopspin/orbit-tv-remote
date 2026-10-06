@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 final class RokuAdapter: NSObject, TVControlling {
@@ -403,3 +404,5 @@ private final class RokuAppsParser: NSObject, XMLParserDelegate {
         currentText = ""
     }
 }
+
+#endif

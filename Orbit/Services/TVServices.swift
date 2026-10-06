@@ -662,7 +662,11 @@ enum TVAdapterFactory {
 
         switch device.platform {
         case .roku:
+            #if DEBUG
             return RokuAdapter(device: device)
+            #else
+            return UnsupportedTVAdapter(device: device)
+            #endif
         case .samsung:
             return SamsungTizenAdapter(device: device)
         case .lgWebOS:
@@ -670,7 +674,11 @@ enum TVAdapterFactory {
         case .androidTV:
             return AndroidTVAdapter(device: device)
         case .fireTV:
+            #if DEBUG
             return FireTVAdapter(device: device)
+            #else
+            return UnsupportedTVAdapter(device: device)
+            #endif
         default:
             return UnsupportedTVAdapter(device: device)
         }
@@ -857,6 +865,7 @@ final class DiscoveryService {
             return androidCandidate
         }
 
+        #if DEBUG
         if TVPlatformAvailability.isEnabled(.fireTV) {
             let fireCandidate = TVDevice(
                 id: "firetv-\(trimmed)",
@@ -888,6 +897,8 @@ final class DiscoveryService {
                 return fireCandidate
             }
         }
+
+        #endif
 
         async let samsungHTTP = LocalTCPProbe.isReachable(
             host: trimmed,
@@ -995,6 +1006,7 @@ final class DiscoveryService {
             return lgCandidate
         }
 
+        #if DEBUG
         if TVPlatformAvailability.isEnabled(.roku) {
             let rokuCandidate = TVDevice(
                 id: "roku-\(trimmed)",
@@ -1017,6 +1029,8 @@ final class DiscoveryService {
                 // Continue to the generic unsupported result below.
             }
         }
+
+        #endif
 
         lastError = "Orbit couldn’t identify a supported TV at that address."
         return nil
