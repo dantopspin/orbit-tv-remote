@@ -820,6 +820,34 @@ final class RemoteCommandQueueTests: XCTestCase {
         )
     }
 
+    func testDiscreteBacklogIsBoundedWithoutDroppingNormalBurst() async {
+        let queue = RemoteCommandQueue()
+        let gate = AsyncGate()
+        var delivered = 0
+        var accepted = 0
+
+        for _ in 0..<8 {
+            let didAccept = queue.enqueue(
+                command: .down,
+                coalescing: false
+            ) {
+                await gate.wait()
+                delivered += 1
+            }
+
+            if didAccept {
+                accepted += 1
+            }
+        }
+
+        XCTAssertEqual(accepted, 6)
+
+        gate.open()
+        await queue.waitUntilIdle()
+
+        XCTAssertEqual(delivered, 6)
+    }
+
     func testCancelPreventsQueuedGenerationFromRunning() async {
         let queue = RemoteCommandQueue()
         var delivered: [RemoteCommand] = []
@@ -837,5 +865,38 @@ final class RemoteCommandQueueTests: XCTestCase {
         XCTAssertTrue(
             delivered.isEmpty
         )
+    }
+}
+
+
+private actor AsyncGate {
+    private var openState = false
+    private var continuations:
+        [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if openState {
+            return
+        }
+
+        await withCheckedContinuation {
+            continuation in
+
+            continuations.append(
+                continuation
+            )
+        }
+    }
+
+    func open() {
+        guard !openState else { return }
+        openState = true
+
+        let pending = continuations
+        continuations.removeAll()
+
+        for continuation in pending {
+            continuation.resume()
+        }
     }
 }

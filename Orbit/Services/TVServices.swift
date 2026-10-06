@@ -1516,9 +1516,12 @@ final class RemoteFavoritesStore {
 
 @MainActor
 final class RemoteCommandQueue {
+    private static let maximumPendingCommands = 6
+
     private var tail: Task<Void, Never>?
     private var pendingCoalescedCommands:
         Set<RemoteCommand> = []
+    private var pendingCount = 0
     private var generation = 0
 
     @discardableResult
@@ -1527,12 +1530,19 @@ final class RemoteCommandQueue {
         coalescing: Bool,
         _ operation: @escaping @MainActor () async -> Void
     ) -> Bool {
+        guard pendingCount <
+                Self.maximumPendingCommands else {
+            return false
+        }
+
         if coalescing,
            pendingCoalescedCommands.contains(
                command
            ) {
             return false
         }
+
+        pendingCount += 1
 
         if coalescing {
             pendingCoalescedCommands.insert(
@@ -1552,11 +1562,18 @@ final class RemoteCommandQueue {
 
             defer {
                 if self.generation ==
-                    currentGeneration,
-                   coalescing {
-                    self.pendingCoalescedCommands.remove(
-                        command
-                    )
+                    currentGeneration {
+                    self.pendingCount =
+                        max(
+                            0,
+                            self.pendingCount - 1
+                        )
+
+                    if coalescing {
+                        self.pendingCoalescedCommands.remove(
+                            command
+                        )
+                    }
                 }
             }
 
@@ -1616,6 +1633,7 @@ final class RemoteCommandQueue {
         tail?.cancel()
         tail = nil
         pendingCoalescedCommands.removeAll()
+        pendingCount = 0
     }
 
     func waitUntilIdle() async {
