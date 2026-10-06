@@ -11,7 +11,20 @@ jobs:
     runs-on: macos-15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Validate app icon
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from PIL import Image
+          path = "Orbit/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+          image = Image.open(path)
+          image.load()
+          assert image.size == (1024, 1024), image.size
+          assert image.mode == "RGB", image.mode
+          print("Validated", path, image.mode, image.size)
+          PY
 
       - name: Select available iPhone simulator
         shell: bash
