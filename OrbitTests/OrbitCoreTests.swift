@@ -842,7 +842,7 @@ final class RemoteCommandQueueTests: XCTestCase {
 
         XCTAssertEqual(accepted, 6)
 
-        gate.open()
+        await gate.open()
         await queue.waitUntilIdle()
 
         XCTAssertEqual(delivered, 6)
