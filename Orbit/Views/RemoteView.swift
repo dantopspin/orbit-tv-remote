@@ -66,6 +66,7 @@ private struct DirectionButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 28))
+        .buttonRepeatBehavior(.enabled)
         .foregroundStyle(.primary)
         .accessibilityLabel(accessibilityName)
     }
@@ -108,9 +109,24 @@ struct VolumePill: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SegmentButton(systemName: "minus", accessibilityLabel: "Volume Down", action: { onCommand(.volumeDown) })
-            SegmentButton(systemName: "speaker.slash.fill", accessibilityLabel: "Mute", action: { onCommand(.mute) })
-            SegmentButton(systemName: "plus", accessibilityLabel: "Volume Up", action: { onCommand(.volumeUp) })
+            SegmentButton(
+                systemName: "minus",
+                accessibilityLabel: "Volume Down",
+                repeats: true,
+                action: { onCommand(.volumeDown) }
+            )
+            SegmentButton(
+                systemName: "speaker.slash.fill",
+                accessibilityLabel: "Mute",
+                repeats: false,
+                action: { onCommand(.mute) }
+            )
+            SegmentButton(
+                systemName: "plus",
+                accessibilityLabel: "Volume Up",
+                repeats: true,
+                action: { onCommand(.volumeUp) }
+            )
         }
         .frame(height: 54)
         .background(Capsule().fill(Color.orbitSurface))
@@ -121,6 +137,7 @@ struct VolumePill: View {
 private struct SegmentButton: View {
     let systemName: String
     let accessibilityLabel: String
+    let repeats: Bool
     let action: () -> Void
 
     var body: some View {
@@ -130,6 +147,7 @@ private struct SegmentButton: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 24))
+        .buttonRepeatBehavior(repeats ? .enabled : .disabled)
         .foregroundStyle(.primary)
         .accessibilityLabel(accessibilityLabel)
     }
@@ -226,9 +244,15 @@ struct RemoteView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let dpadSize = min(proxy.size.width * 0.58, 232)
+            let isCompactHeight = proxy.size.height < 720
+            let dpadSize = min(
+                proxy.size.width * 0.58,
+                isCompactHeight ? 176 : 224
+            )
+            let verticalSpacing: CGFloat =
+                isCompactHeight ? 8 : 12
 
-            VStack(spacing: 14) {
+            VStack(spacing: verticalSpacing) {
                 header
 
                 if let message = appModel.connectionMessage {
@@ -363,8 +387,8 @@ struct RemoteView: View {
                 }
             }
             .padding(.horizontal, 22)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
+            .padding(.top, isCompactHeight ? 4 : 8)
+            .padding(.bottom, isCompactHeight ? 8 : 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(Color.orbitBackground.ignoresSafeArea())
