@@ -30,7 +30,7 @@ struct DiscoveryView: View {
                     ContentUnavailableView {
                         Label("No TVs found", systemImage: "tv")
                     } description: {
-                        Text("Automatic discovery is being added protocol by protocol. You can connect to a Roku by local IP in this first build.")
+                        Text("Automatic discovery is being added protocol by protocol. You can connect by local IP while we finish discovery.")
                     } actions: {
                         Button("Scan Again") {
                             appModel.discovery.startScan()
@@ -83,7 +83,7 @@ struct DiscoveryView: View {
             .sheet(isPresented: $showManualAddress) {
                 NavigationStack {
                     Form {
-                        Section("Manual Roku connection") {
+                        Section("Manual connection") {
                             TextField("TV IP address", text: $manualAddress)
                                 .keyboardType(.numbersAndPunctuation)
                                 .textInputAutocapitalization(.never)
@@ -107,7 +107,7 @@ struct DiscoveryView: View {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Connect") {
                                 Task {
-                                    if let device = await appModel.discovery.addManualRoku(host: manualAddress) {
+                                    if let device = await appModel.discovery.addManualTV(host: manualAddress) {
                                         appModel.select(device)
                                         showManualAddress = false
                                         dismiss()

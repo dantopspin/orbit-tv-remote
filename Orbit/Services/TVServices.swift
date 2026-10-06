@@ -108,6 +108,7 @@ final class DeviceStore {
     }
 }
 
+@MainActor
 protocol TVControlling: AnyObject {
     var device: TVDevice { get }
 
@@ -168,11 +169,14 @@ enum TVControlError: LocalizedError {
     }
 }
 
+@MainActor
 enum TVAdapterFactory {
     static func makeAdapter(for device: TVDevice) -> TVControlling {
         switch device.platform {
         case .roku:
             return RokuAdapter(device: device)
+        case .samsung:
+            return SamsungTizenAdapter(device: device)
         default:
             return UnsupportedTVAdapter(device: device)
         }
@@ -215,10 +219,10 @@ final class DiscoveryService {
         isSearching = false
     }
 
-    func addManualRoku(host: String) async -> TVDevice? {
+    func addManualTV(host: String) async -> TVDevice? {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard isValidIPv4Address(trimmed) else {
+        guard isValidLocalIPv4Address(trimmed) else {
             lastError = "Enter a valid local IPv4 address, for example 192.168.1.24."
             return nil
         }
@@ -227,47 +231,78 @@ final class DiscoveryService {
         lastError = nil
         defer { isSearching = false }
 
-        let candidate = TVDevice(
+        let samsungCandidate = TVDevice(
+            id: "samsung-\(trimmed)",
+            name: "Samsung TV",
+            platform: .samsung,
+            host: trimmed,
+            port: 8002
+        )
+
+        let samsung = SamsungTizenAdapter(device: samsungCandidate)
+
+        do {
+            _ = try await samsung.connect()
+            let connectedDevice = samsung.device
+
+            devices.removeAll { $0.id == connectedDevice.id }
+            devices.append(connectedDevice)
+            return connectedDevice
+        } catch TVControlError.permissionDenied(let message) {
+            lastError = message
+            return nil
+        } catch {
+            await samsung.disconnect()
+        }
+
+        let rokuCandidate = TVDevice(
             id: "roku-\(trimmed)",
             name: "Roku TV",
             platform: .roku,
             host: trimmed,
-            port: 8060,
-            capabilities: [
-                .directionalNavigation, .keyboard, .power, .volume, .mute,
-                .inputSelection, .appLaunching, .playback, .channels
-            ]
+            port: 8060
         )
 
-        let adapter = RokuAdapter(device: candidate)
+        let roku = RokuAdapter(device: rokuCandidate)
 
         do {
-            _ = try await adapter.connect()
-            let connectedDevice = adapter.device
+            _ = try await roku.connect()
+            let connectedDevice = roku.device
 
             devices.removeAll { $0.id == connectedDevice.id }
             devices.append(connectedDevice)
             return connectedDevice
         } catch {
-            lastError = error.localizedDescription
+            lastError = "Orbit couldn’t identify a supported TV at that address."
             return nil
         }
     }
 
-    private func isValidIPv4Address(_ value: String) -> Bool {
+    private func isValidLocalIPv4Address(_ value: String) -> Bool {
         let parts = value.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 4 else { return false }
 
-        return parts.allSatisfy { part in
+        let octets = parts.compactMap { part -> Int? in
             guard !part.isEmpty,
                   part.count <= 3,
                   part.allSatisfy({ $0.isNumber }),
-                  let number = Int(part) else {
-                return false
+                  let number = Int(part),
+                  (0...255).contains(number) else {
+                return nil
             }
 
-            return (0...255).contains(number)
+            return number
         }
+
+        guard octets.count == 4 else { return false }
+
+        if octets[0] == 10 { return true }
+        if octets[0] == 172 && (16...31).contains(octets[1]) { return true }
+        if octets[0] == 192 && octets[1] == 168 { return true }
+        if octets[0] == 169 && octets[1] == 254 { return true }
+        if octets[0] == 100 && (64...127).contains(octets[1]) { return true }
+
+        return false
     }
 }
 
