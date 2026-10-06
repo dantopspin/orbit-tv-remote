@@ -45,6 +45,42 @@ final class DeviceStore {
         persist()
     }
 
+    func reconcile(oldDeviceID: String, with resolvedDevice: TVDevice) {
+        guard let oldIndex = devices.firstIndex(where: { $0.id == oldDeviceID }) else {
+            addOrUpdate(resolvedDevice)
+            return
+        }
+
+        let previous = devices[oldIndex]
+        let genericNames: Set<String> = [
+            "Roku TV",
+            "Smart TV",
+            previous.platform.displayName
+        ]
+
+        var merged = resolvedDevice
+        merged.roomName = previous.roomName
+
+        if !genericNames.contains(previous.name) {
+            merged.name = previous.name
+        }
+
+        devices.removeAll { $0.id == resolvedDevice.id && $0.id != oldDeviceID }
+
+        guard let refreshedIndex = devices.firstIndex(where: { $0.id == oldDeviceID }) else {
+            addOrUpdate(merged)
+            return
+        }
+
+        devices[refreshedIndex] = merged
+
+        if selectedDeviceID == oldDeviceID {
+            selectedDeviceID = merged.id
+        }
+
+        persist()
+    }
+
     func remove(_ device: TVDevice) {
         devices.removeAll { $0.id == device.id }
         if selectedDeviceID == device.id { selectedDeviceID = devices.first?.id }
@@ -115,13 +151,19 @@ extension TVControlling {
 enum TVControlError: LocalizedError {
     case unsupported
     case unreachable
+    case permissionDenied(String)
     case invalidResponse
 
     var errorDescription: String? {
         switch self {
-        case .unsupported: return "This control is not supported by the connected TV."
-        case .unreachable: return "The TV could not be reached on your local network."
-        case .invalidResponse: return "The TV returned an unexpected response."
+        case .unsupported:
+            return "This control is not supported by the connected TV."
+        case .unreachable:
+            return "The TV could not be reached on your local network."
+        case .permissionDenied(let message):
+            return message
+        case .invalidResponse:
+            return "The TV returned an unexpected response."
         }
     }
 }
@@ -196,9 +238,8 @@ final class DiscoveryService {
         let adapter = RokuAdapter(device: candidate)
 
         do {
-            let connection = try await adapter.connect()
-            var connectedDevice = candidate
-            connectedDevice.capabilities = connection.capabilities
+            _ = try await adapter.connect()
+            let connectedDevice = adapter.device
 
             devices.removeAll { $0.id == connectedDevice.id }
             devices.append(connectedDevice)
@@ -441,13 +482,15 @@ final class AppModel {
                     return
                 }
 
+                let resolvedDevice = adapter.device
+                self.deviceStore.reconcile(
+                    oldDeviceID: deviceID,
+                    with: resolvedDevice
+                )
+
                 self.connectionState = connection.state
                 self.currentCapabilities = connection.capabilities
                 self.pairingRequirement = connection.pairingRequirement
-                self.deviceStore.updateCapabilities(
-                    for: deviceID,
-                    capabilities: connection.capabilities
-                )
                 self.lastControlError = nil
             } catch is CancellationError {
                 return

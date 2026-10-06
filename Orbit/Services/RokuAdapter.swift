@@ -1,7 +1,8 @@
 import Foundation
 
 final class RokuAdapter: NSObject, TVControlling {
-    let device: TVDevice
+    private(set) var device: TVDevice
+
     private static let localSession: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 2.5
@@ -11,6 +12,7 @@ final class RokuAdapter: NSObject, TVControlling {
     }()
 
     private let session: URLSession
+    private var deviceInfo: RokuDeviceInfo?
 
     init(device: TVDevice, session: URLSession? = nil) {
         self.device = device
@@ -18,24 +20,30 @@ final class RokuAdapter: NSObject, TVControlling {
     }
 
     func connect() async throws -> TVConnectionInfo {
-        guard let url = endpoint("query/device-info") else {
+        let data = try await get("query/device-info")
+        let info = try RokuDeviceInfoParser(data: data).parse()
+
+        guard info.looksLikeRoku else {
             throw TVControlError.invalidResponse
         }
 
-        let (_, response) = try await session.data(from: url)
-        guard let http = response as? HTTPURLResponse else {
-            throw TVControlError.invalidResponse
-        }
-
-        guard (200..<300).contains(http.statusCode) else {
-            throw TVControlError.unreachable
-        }
+        deviceInfo = info
+        device = resolvedDevice(from: info)
 
         return TVConnectionInfo(
-            state: .connected,
+            state: info.isPoweredOff ? .off : .connected,
             capabilities: device.capabilities,
             pairingRequirement: .none
         )
+    }
+
+    func send(_ command: RemoteCommand) async throws {
+        let key = try key(for: command)
+        try await post("keypress/\(key)")
+
+        if command == .power, deviceInfo?.isTV == true {
+            deviceInfo?.powerMode = deviceInfo?.isPoweredOff == true ? "PowerOn" : "PowerOff"
+        }
     }
 
     func beginPress(_ command: RemoteCommand) async throws {
@@ -48,35 +56,32 @@ final class RokuAdapter: NSObject, TVControlling {
         try await post("keyup/\(key)")
     }
 
-    func send(_ command: RemoteCommand) async throws {
-        try await post("keypress/\(try key(for: command))")
-    }
-
     func send(text: String) async throws {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+
         for character in text {
-            let raw = "Lit_\(character)"
-            guard let encoded = raw.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-                continue
+            let literal = String(character)
+
+            guard let encoded = literal.addingPercentEncoding(withAllowedCharacters: allowed) else {
+                throw TVControlError.invalidResponse
             }
-            try await post("keypress/\(encoded)")
+
+            try await post("keypress/Lit_\(encoded)")
         }
     }
 
     func apps() async throws -> [TVApp] {
-        guard let url = endpoint("query/apps") else {
-            throw TVControlError.invalidResponse
-        }
-
-        let (data, response) = try await session.data(from: url)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw TVControlError.unreachable
-        }
-
+        let data = try await get("query/apps")
         return RokuAppsParser(data: data).parse()
     }
 
     func inputs() async throws -> [TVInput] {
-        [
+        guard deviceInfo?.isTV == true else {
+            return []
+        }
+
+        return [
             TVInput(id: "InputTuner", name: "TV"),
             TVInput(id: "InputHDMI1", name: "HDMI 1"),
             TVInput(id: "InputHDMI2", name: "HDMI 2"),
@@ -91,7 +96,98 @@ final class RokuAdapter: NSObject, TVControlling {
     }
 
     func select(input: TVInput) async throws {
+        guard deviceInfo?.isTV == true else {
+            throw TVControlError.unsupported
+        }
+
         try await post("keypress/\(input.id)")
+    }
+
+    private func resolvedDevice(from info: RokuDeviceInfo) -> TVDevice {
+        let stableID = info.serialNumber ?? info.deviceID ?? device.id
+
+        var capabilities: Set<TVCapability> = [
+            .directionalNavigation,
+            .touchpad,
+            .keyboard,
+            .appLaunching,
+            .playback
+        ]
+
+        if info.isTV {
+            capabilities.formUnion([
+                .power,
+                .volume,
+                .mute,
+                .inputSelection,
+                .channels
+            ])
+        }
+
+        return TVDevice(
+            id: "roku-\(stableID)",
+            name: info.bestName ?? (info.isTV ? "Roku TV" : "Roku"),
+            platform: .roku,
+            host: device.host,
+            port: device.port ?? 8060,
+            roomName: device.roomName,
+            capabilities: capabilities
+        )
+    }
+
+    private func key(for command: RemoteCommand) throws -> String {
+        switch command {
+        case .power:
+            guard deviceInfo?.isTV == true else {
+                throw TVControlError.unsupported
+            }
+            return deviceInfo?.isPoweredOff == true ? "PowerOn" : "PowerOff"
+        case .up:
+            return "Up"
+        case .down:
+            return "Down"
+        case .left:
+            return "Left"
+        case .right:
+            return "Right"
+        case .select:
+            return "Select"
+        case .back:
+            return "Back"
+        case .home:
+            return "Home"
+        case .volumeUp:
+            guard deviceInfo?.isTV == true else { throw TVControlError.unsupported }
+            return "VolumeUp"
+        case .volumeDown:
+            guard deviceInfo?.isTV == true else { throw TVControlError.unsupported }
+            return "VolumeDown"
+        case .mute:
+            guard deviceInfo?.isTV == true else { throw TVControlError.unsupported }
+            return "VolumeMute"
+        case .rewind:
+            return "Rev"
+        case .play, .pause:
+            return "Play"
+        case .fastForward:
+            return "Fwd"
+        case .channelUp:
+            guard deviceInfo?.isTV == true else { throw TVControlError.unsupported }
+            return "ChannelUp"
+        case .channelDown:
+            guard deviceInfo?.isTV == true else { throw TVControlError.unsupported }
+            return "ChannelDown"
+        }
+    }
+
+    private func get(_ path: String) async throws -> Data {
+        guard let url = endpoint(path) else {
+            throw TVControlError.invalidResponse
+        }
+
+        let (data, response) = try await session.data(from: url)
+        try validate(response)
+        return data
     }
 
     private func post(_ path: String) async throws {
@@ -104,36 +200,132 @@ final class RokuAdapter: NSObject, TVControlling {
         request.httpBody = Data()
 
         let (_, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode) else {
-            throw TVControlError.unreachable
-        }
+        try validate(response)
     }
 
-    private func key(for command: RemoteCommand) throws -> String {
-        switch command {
-        case .power: return "PowerOff"
-        case .up: return "Up"
-        case .down: return "Down"
-        case .left: return "Left"
-        case .right: return "Right"
-        case .select: return "Select"
-        case .back: return "Back"
-        case .home: return "Home"
-        case .volumeUp: return "VolumeUp"
-        case .volumeDown: return "VolumeDown"
-        case .mute: return "VolumeMute"
-        case .rewind: return "Rev"
-        case .play, .pause: return "Play"
-        case .fastForward: return "Fwd"
-        case .channelUp: return "ChannelUp"
-        case .channelDown: return "ChannelDown"
+    private func validate(_ response: URLResponse) throws {
+        guard let http = response as? HTTPURLResponse else {
+            throw TVControlError.invalidResponse
+        }
+
+        if http.statusCode == 403 {
+            throw TVControlError.permissionDenied(
+                "Roku mobile-app control is disabled or limited. On your Roku, allow control by mobile apps, then try again."
+            )
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            throw TVControlError.unreachable
         }
     }
 
     private func endpoint(_ path: String) -> URL? {
         let port = device.port ?? 8060
         return URL(string: "http://\(device.host):\(port)/\(path)")
+    }
+}
+
+private struct RokuDeviceInfo {
+    var serialNumber: String?
+    var deviceID: String?
+    var userDeviceName: String?
+    var friendlyDeviceName: String?
+    var modelName: String?
+    var isTV: Bool = false
+    var powerMode: String?
+    var rootElement: String?
+
+    var looksLikeRoku: Bool {
+        rootElement == "device-info" &&
+        (serialNumber != nil || deviceID != nil || modelName != nil)
+    }
+
+    var bestName: String? {
+        [userDeviceName, friendlyDeviceName, modelName]
+            .compactMap { value in
+                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return (trimmed?.isEmpty == false) ? trimmed : nil
+            }
+            .first
+    }
+
+    var isPoweredOff: Bool {
+        guard let powerMode else { return false }
+        return powerMode.lowercased().contains("off")
+    }
+}
+
+private final class RokuDeviceInfoParser: NSObject, XMLParserDelegate {
+    private let data: Data
+    private var info = RokuDeviceInfo()
+    private var currentElement: String?
+    private var currentText = ""
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    func parse() throws -> RokuDeviceInfo {
+        let parser = XMLParser(data: data)
+        parser.delegate = self
+
+        guard parser.parse(), info.looksLikeRoku else {
+            throw TVControlError.invalidResponse
+        }
+
+        return info
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        if info.rootElement == nil {
+            info.rootElement = elementName
+        }
+
+        currentElement = elementName
+        currentText = ""
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        currentText += string
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didEndElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        guard currentElement == elementName else { return }
+
+        let value = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch elementName {
+        case "serial-number":
+            info.serialNumber = value
+        case "device-id":
+            info.deviceID = value
+        case "user-device-name":
+            info.userDeviceName = value
+        case "friendly-device-name":
+            info.friendlyDeviceName = value
+        case "model-name":
+            info.modelName = value
+        case "is-tv":
+            info.isTV = value.lowercased() == "true"
+        case "power-mode":
+            info.powerMode = value
+        default:
+            break
+        }
+
+        currentElement = nil
+        currentText = ""
     }
 }
 
