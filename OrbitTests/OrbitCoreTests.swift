@@ -519,6 +519,46 @@ final class DeviceStoreTests: XCTestCase {
         )
     }
 
+    func testAndroidReconcileDropsProvisionalBonjourAlias() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+        let provisional = TVDevice(
+            id: "androidtv-google tv streamer",
+            name: "Google TV Streamer",
+            platform: .androidTV,
+            host: "192.168.1.50"
+        )
+        store.addOrUpdate(provisional)
+
+        let stable = TVDevice(
+            id: "androidtv-00112233445566778899aabbccddeeff",
+            name: "Google TV Streamer",
+            platform: .androidTV,
+            host: "192.168.1.50"
+        )
+
+        store.reconcile(
+            oldDeviceID: provisional.id,
+            with: stable
+        )
+
+        XCTAssertEqual(
+            store.devices.count,
+            1
+        )
+        XCTAssertEqual(
+            store.selectedDevice?.id,
+            stable.id
+        )
+        XCTAssertFalse(
+            store.selectedDevice?
+                .discoveryAliases
+                .contains(provisional.id) == true
+        )
+    }
+
     func testAndroidBonjourNameIsNotAStableAlias() {
         clearDeviceDefaults()
         defer { clearDeviceDefaults() }
