@@ -179,6 +179,8 @@ enum TVAdapterFactory {
             return SamsungTizenAdapter(device: device)
         case .lgWebOS:
             return LGWebOSAdapter(device: device)
+        case .androidTV:
+            return AndroidTVAdapter(device: device)
         default:
             return UnsupportedTVAdapter(device: device)
         }

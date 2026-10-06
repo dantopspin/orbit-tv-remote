@@ -20,6 +20,9 @@
 		375D069759044896044E0CD4 /* SettingsPremiumLegal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B4363D1B30688A4DF4B6DAC /* SettingsPremiumLegal.swift */; };
 		69BD2B8BC8B37F3EB14DB165 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EEF25E849B7769FF68BE4D51 /* Assets.xcassets */; };
 		C1D2E3F40516273849A5B6C7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D1E2F30415263748A9B5C6D7 /* PrivacyInfo.xcprivacy */; };
+		A7D91F4E12B34010A0000001 /* AndroidTVIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D91F4E12B34010A0000011 /* AndroidTVIdentity.swift */; };
+		A7D91F4E12B34010A0000002 /* AndroidTVAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D91F4E12B34010A0000012 /* AndroidTVAdapter.swift */; };
+		A7D91F4E12B34010A0000003 /* AndroidTVRemoteControl in Frameworks */ = {isa = PBXBuildFile; productRef = A7D91F4E12B34010A0000031 /* AndroidTVRemoteControl */; };
 /* End PBXBuildFile section */
 /* Begin PBXFileReference section */
 		6866C3C0EEEF54F436AFA877 /* OrbitCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrbitCore.swift; sourceTree = "<group>"; };
@@ -44,9 +47,14 @@
 		FF73185DE1B469C901F299EA /* STATUS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = STATUS.md; sourceTree = "<group>"; };
 		7A4FF7F962C7F66B27D6CDC6 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		38A007151ABE87CC01A5B6E9 /* Orbit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Orbit.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7D91F4E12B34010A0000011 /* AndroidTVIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndroidTVIdentity.swift; sourceTree = "<group>"; };
+		A7D91F4E12B34010A0000012 /* AndroidTVAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AndroidTVAdapter.swift; sourceTree = "<group>"; };
+		A7D91F4E12B34010A0000013 /* THIRD_PARTY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = THIRD_PARTY.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 /* Begin PBXFrameworksBuildPhase section */
-		7561BFB015D8F536760CB671 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		7561BFB015D8F536760CB671 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (
+			A7D91F4E12B34010A0000003 /* AndroidTVRemoteControl in Frameworks */,
+		); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 /* Begin PBXGroup section */
 		B28B7AF69320201D1CF206EB = {isa = PBXGroup; children = (
@@ -72,6 +80,8 @@
 			3C28CCE9F6597368C4CE22C6 /* TVModels.swift */,
 		); path = Models; sourceTree = "<group>"; };
 		0A0BBFD12C9FB720517EEFC0 /* Services */ = {isa = PBXGroup; children = (
+			A7D91F4E12B34010A0000011 /* AndroidTVIdentity.swift */,
+			A7D91F4E12B34010A0000012 /* AndroidTVAdapter.swift */,
 			234567890ABCDEF123456789 /* SSDPDiscovery.swift */,
 			F102132435465768A9B0C1D2 /* LGWebOSAdapter.swift */,
 			B1C2D3E4F5061728394A5B6C /* SamsungTizenAdapter.swift */,
@@ -91,16 +101,17 @@
 			EEF25E849B7769FF68BE4D51 /* Assets.xcassets */,
 		); path = Resources; sourceTree = "<group>"; };
 		86E76DCFD8B38CD6265704AD /* Docs */ = {isa = PBXGroup; children = (
+			A7D91F4E12B34010A0000013 /* THIRD_PARTY.md */,
 			E2091E2EA993D901A00FB636 /* ARCHITECTURE.md */,
 			06AA1098890F0026E28E4781 /* MULTICAST.md */,
 			FF73185DE1B469C901F299EA /* STATUS.md */,
 		); path = Docs; sourceTree = "<group>"; };
 /* End PBXGroup section */
 /* Begin PBXNativeTarget section */
-		0E8A3AD980EC179856012B7E /* Orbit */ = {isa = PBXNativeTarget; buildConfigurationList = D61E3363DEF3F4E448C68105 /* Build configuration list for PBXNativeTarget "Orbit" */; buildPhases = (BCE16DD0260827ECF338C787 /* Sources */, 7561BFB015D8F536760CB671 /* Frameworks */, 0189424A5A60FED329FA868E /* Resources */); buildRules = (); dependencies = (); name = Orbit; productName = Orbit; productReference = 38A007151ABE87CC01A5B6E9 /* Orbit.app */; productType = "com.apple.product-type.application"; };
+		0E8A3AD980EC179856012B7E /* Orbit */ = {isa = PBXNativeTarget; buildConfigurationList = D61E3363DEF3F4E448C68105 /* Build configuration list for PBXNativeTarget "Orbit" */; buildPhases = (BCE16DD0260827ECF338C787 /* Sources */, 7561BFB015D8F536760CB671 /* Frameworks */, 0189424A5A60FED329FA868E /* Resources */); buildRules = (); dependencies = (); name = Orbit; packageProductDependencies = (A7D91F4E12B34010A0000031 /* AndroidTVRemoteControl */,); productName = Orbit; productReference = 38A007151ABE87CC01A5B6E9 /* Orbit.app */; productType = "com.apple.product-type.application"; };
 /* End PBXNativeTarget section */
 /* Begin PBXProject section */
-		98F54143AB4E86B28C3AFEE0 /* Project object */ = {isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; TargetAttributes = { 0E8A3AD980EC179856012B7E = { CreatedOnToolsVersion = 16.0; }; }; }; buildConfigurationList = 793D6D7C60BD6329D6F91FDB /* Build configuration list for PBXProject "Orbit" */; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = B28B7AF69320201D1CF206EB; productRefGroup = FBDC4F23F93125BBEEAE800C /* Products */; projectDirPath = ""; projectRoot = ""; targets = (0E8A3AD980EC179856012B7E /* Orbit */); };
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 1600; LastUpgradeCheck = 1600; TargetAttributes = { 0E8A3AD980EC179856012B7E = { CreatedOnToolsVersion = 16.0; }; }; }; buildConfigurationList = 793D6D7C60BD6329D6F91FDB /* Build configuration list for PBXProject "Orbit" */; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = B28B7AF69320201D1CF206EB; productRefGroup = FBDC4F23F93125BBEEAE800C /* Products */; packageReferences = (A7D91F4E12B34010A0000021 /* XCRemoteSwiftPackageReference "AndroidTVRemoteControl" */,); projectDirPath = ""; projectRoot = ""; targets = (0E8A3AD980EC179856012B7E /* Orbit */); };
 /* End PBXProject section */
 /* Begin PBXResourcesBuildPhase section */
 		0189424A5A60FED329FA868E /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
@@ -117,6 +128,8 @@
 			A1B2C3D4E5F60718293A4B5C /* SamsungTizenAdapter.swift in Sources */,
 			E1F2031425364758A9B0C1D2 /* LGWebOSAdapter.swift in Sources */,
 			1234567890ABCDEF12345678 /* SSDPDiscovery.swift in Sources */,
+			A7D91F4E12B34010A0000001 /* AndroidTVIdentity.swift in Sources */,
+			A7D91F4E12B34010A0000002 /* AndroidTVAdapter.swift in Sources */,
 			8A80902EB8F7C8A2FC199449 /* TVServices.swift in Sources */,
 			2ADF9308758B1CBF7E1E5E41 /* DiscoveryDevicesView.swift in Sources */,
 			5979A790DAABF72EEA0A7DE5 /* OnboardingView.swift in Sources */,
@@ -125,6 +138,25 @@
 			375D069759044896044E0CD4 /* SettingsPremiumLegal.swift in Sources */,
 		); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
+/* Begin XCRemoteSwiftPackageReference section */
+		A7D91F4E12B34010A0000021 /* XCRemoteSwiftPackageReference "AndroidTVRemoteControl" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/odyshewroman/AndroidTVRemoteControl";
+			requirement = {
+				kind = revision;
+				revision = 32393c3d672c285c4acbd1d42d6873e9b9a523e2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A7D91F4E12B34010A0000031 /* AndroidTVRemoteControl */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A7D91F4E12B34010A0000021 /* XCRemoteSwiftPackageReference "AndroidTVRemoteControl" */;
+			productName = AndroidTVRemoteControl;
+		};
+/* End XCSwiftPackageProductDependency section */
+
 /* Begin XCBuildConfiguration section */
 		E9EFE2AEA5AD46614D39E809 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)"); ONLY_ACTIVE_ARCH = YES; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; }; name = Debug; };
 		5498D9B96ED2832E04A90C4A /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; SWIFT_COMPILATION_MODE = wholemodule; VALIDATE_PRODUCT = YES; }; name = Release; };
