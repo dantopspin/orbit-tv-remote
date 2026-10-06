@@ -13,16 +13,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Orbit
+      - name: Select available iPhone simulator
+        shell: bash
+        run: |
+          SIMULATOR_ID="$(
+            xcrun simctl list devices available -j |
+            python3 -c '
+import json
+import sys
+
+payload = json.load(sys.stdin)
+for devices in payload.get("devices", {}).values():
+    for device in devices:
+        if (
+            device.get("isAvailable")
+            and device.get("name", "").startswith("iPhone")
+        ):
+            print(device["udid"])
+            raise SystemExit(0)
+
+raise SystemExit("No available iPhone simulator found")
+'
+          )"
+          echo "SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
+          echo "Using simulator $SIMULATOR_ID"
+
+      - name: Build Orbit for testing
         run: >
           xcodebuild
           -project Orbit.xcodeproj
           -scheme Orbit
           -configuration Debug
-          -sdk iphonesimulator
-          -destination 'generic/platform=iOS Simulator'
+          -destination "platform=iOS Simulator,id=$SIMULATOR_ID"
           CODE_SIGNING_ALLOWED=NO
-          build
+          build-for-testing
+
+      - name: Run Orbit unit tests
+        run: >
+          xcodebuild
+          -project Orbit.xcodeproj
+          -scheme Orbit
+          -configuration Debug
+          -destination "platform=iOS Simulator,id=$SIMULATOR_ID"
+          CODE_SIGNING_ALLOWED=NO
+          test-without-building
 
       - name: Build Orbit Release
         run: >
@@ -34,13 +68,3 @@ jobs:
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
           build
-
-      - name: Run Orbit unit tests
-        run: >
-          xcodebuild
-          -project Orbit.xcodeproj
-          -scheme Orbit
-          -configuration Debug
-          -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest'
-          CODE_SIGNING_ALLOWED=NO
-          test
