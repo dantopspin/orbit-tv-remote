@@ -154,10 +154,9 @@ final class DeviceStore {
         )
 
         if oldDeviceID != resolvedDevice.id,
-           !Self.isProvisionalIdentity(
+           Self.isTrustedIdentity(
                oldDeviceID,
-               platform: previous.platform,
-               host: previous.host
+               platform: previous.platform
            ) {
             merged.formDiscoveryAliases(
                 [oldDeviceID]
