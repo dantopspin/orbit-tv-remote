@@ -17,6 +17,7 @@ final class AndroidTVAdapter: TVControlling {
     private var cryptoManager: CryptoManager?
     private var pairingManager: PairingManager?
     private var remoteManager: RemoteManager?
+    private var pairingExpiryTask: Task<Void, Never>?
 
     init(device: TVDevice) {
         self.device = device
@@ -26,8 +27,22 @@ final class AndroidTVAdapter: TVControlling {
         try prepareProtocolManagersIfNeeded()
 
         if hasPairingMarker {
-            try await connectRemote()
-            return connectedInfo()
+            do {
+                try await connectRemote()
+                return connectedInfo()
+            } catch let error as TVControlError {
+                guard case .permissionDenied = error else {
+                    throw error
+                }
+
+                PairingCredentialStore.remove(
+                    platform: .androidTV,
+                    deviceID: device.id
+                )
+
+                remoteManager?.disconnect()
+                remoteManager = nil
+            }
         }
 
         let requirement = try await pairingRequirement()
@@ -40,6 +55,9 @@ final class AndroidTVAdapter: TVControlling {
     }
 
     func disconnect() async {
+        pairingExpiryTask?.cancel()
+        pairingExpiryTask = nil
+
         pairingManager?.disconnect()
         pairingManager = nil
 
@@ -70,37 +88,61 @@ final class AndroidTVAdapter: TVControlling {
 
         let gate = AndroidTVCallbackGate<TVPairingRequirement>()
 
-        return try await withCheckedThrowingContinuation { continuation in
-            gate.install(continuation)
+        do {
+            let requirement = try await withCheckedThrowingContinuation {
+                (continuation:
+                    CheckedContinuation<TVPairingRequirement, Error>) in
 
-            manager.stateChanged = { state in
-                switch state {
-                case .waitingCode:
-                    gate.succeed(
-                        .pin(
-                            length: 6,
-                            message: "Enter the 6-character code shown on your TV."
-                        )
+                gate.install(continuation)
+                gate.fail(
+                    after: 12,
+                    with: TVControlError.transport(
+                        "Android TV did not start pairing in time. Make sure it is awake and on the same Wi-Fi network."
                     )
+                )
 
-                case .error(let error):
-                    gate.fail(
-                        TVControlError.permissionDenied(
-                            AndroidTVAdapter.userMessage(for: error)
+                manager.stateChanged = { state in
+                    switch state {
+                    case .waitingCode:
+                        gate.succeed(
+                            .pin(
+                                length: 6,
+                                message: "Enter the 6-character code shown on your TV."
+                            )
                         )
-                    )
 
-                default:
-                    break
+                    case .error(let error):
+                        gate.fail(
+                            TVControlError.permissionDenied(
+                                AndroidTVAdapter.userMessage(
+                                    for: error
+                                )
+                            )
+                        )
+
+                    default:
+                        break
+                    }
                 }
+
+                manager.connect(
+                    device.host,
+                    "Orbit",
+                    "atvremote",
+                    timeout: 10
+                )
             }
 
-            manager.connect(
-                device.host,
-                "Orbit",
-                "atvremote",
-                timeout: 10
-            )
+            schedulePairingExpiry()
+            return requirement
+        } catch {
+            manager.disconnect()
+
+            if pairingManager === manager {
+                pairingManager = nil
+            }
+
+            throw error
         }
     }
 
@@ -130,31 +172,55 @@ final class AndroidTVAdapter: TVControlling {
             )
         }
 
+        pairingExpiryTask?.cancel()
+        pairingExpiryTask = nil
+
         let gate = AndroidTVCallbackGate<Void>()
 
-        try await withCheckedThrowingContinuation { continuation in
-            gate.install(continuation)
+        do {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
 
-            manager.stateChanged = { state in
-                switch state {
-                case .successPaired:
-                    gate.succeed(())
-
-                case .error(let error):
-                    gate.fail(
-                        TVControlError.permissionDenied(
-                            AndroidTVAdapter.userMessage(for: error)
-                        )
+                gate.install(continuation)
+                gate.fail(
+                    after: 12,
+                    with: TVControlError.permissionDenied(
+                        "Android TV did not confirm the pairing code in time. Start pairing again."
                     )
+                )
 
-                default:
-                    break
+                manager.stateChanged = { state in
+                    switch state {
+                    case .successPaired:
+                        gate.succeed(())
+
+                    case .error(let error):
+                        gate.fail(
+                            TVControlError.permissionDenied(
+                                AndroidTVAdapter.userMessage(
+                                    for: error
+                                )
+                            )
+                        )
+
+                    default:
+                        break
+                    }
                 }
+
+                manager.sendSecret(code)
+            }
+        } catch {
+            manager.disconnect()
+
+            if pairingManager === manager {
+                pairingManager = nil
             }
 
-            manager.sendSecret(code)
+            throw error
         }
 
+        manager.disconnect()
         pairingManager = nil
 
         try PairingCredentialStore.save(
@@ -346,30 +412,60 @@ final class AndroidTVAdapter: TVControlling {
 
         let gate = AndroidTVCallbackGate<Void>()
 
-        try await withCheckedThrowingContinuation { continuation in
-            gate.install(continuation)
+        do {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
 
-            manager.stateChanged = { state in
-                switch state {
-                case .paired:
-                    gate.succeed(())
-
-                case .error(let error):
-                    gate.fail(
-                        TVControlError.unreachableWith(
-                            AndroidTVAdapter.userMessage(for: error)
-                        )
+                gate.install(continuation)
+                gate.fail(
+                    after: 10,
+                    with: TVControlError.transport(
+                        "Android TV did not respond in time."
                     )
+                )
 
-                default:
-                    break
+                manager.stateChanged = { state in
+                    switch state {
+                    case .paired:
+                        gate.succeed(())
+
+                    case .error(let error):
+                        if AndroidTVAdapter.requiresRepair(
+                            for: error
+                        ) {
+                            gate.fail(
+                                TVControlError.permissionDenied(
+                                    "Android TV no longer recognizes Orbit. Pair it again."
+                                )
+                            )
+                        } else {
+                            gate.fail(
+                                TVControlError.transport(
+                                    AndroidTVAdapter.userMessage(
+                                        for: error
+                                    )
+                                )
+                            )
+                        }
+
+                    default:
+                        break
+                    }
                 }
+
+                manager.connect(
+                    device.host,
+                    timeout: 8
+                )
+            }
+        } catch {
+            manager.disconnect()
+
+            if remoteManager === manager {
+                remoteManager = nil
             }
 
-            manager.connect(
-                device.host,
-                timeout: 8
-            )
+            throw error
         }
 
         manager.stateChanged = { [weak self] state in
@@ -434,6 +530,43 @@ final class AndroidTVAdapter: TVControlling {
         }
     }
 
+    private func schedulePairingExpiry() {
+        pairingExpiryTask?.cancel()
+
+        pairingExpiryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(
+                nanoseconds: 120_000_000_000
+            )
+
+            guard !Task.isCancelled,
+                  let self else {
+                return
+            }
+
+            self.pairingManager?.disconnect()
+            self.pairingManager = nil
+            self.pairingExpiryTask = nil
+
+            self.eventEmitter.yield(
+                .disconnected(
+                    message:
+                        "Android TV pairing expired. Start connecting again to request a new code."
+                )
+            )
+        }
+    }
+
+    nonisolated private static func requiresRepair(
+        for error: AndroidTVRemoteControlError
+    ) -> Bool {
+        switch error {
+        case .pairingNotSuccess:
+            return true
+        default:
+            return false
+        }
+    }
+
     nonisolated private static func userMessage(
         for error: AndroidTVRemoteControlError
     ) -> String {
@@ -472,6 +605,7 @@ private final class AndroidTVServerKeyBox: @unchecked Sendable {
 private final class AndroidTVCallbackGate<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Value, Error>?
+    private var timeoutTask: Task<Void, Never>?
     private var resolved = false
 
     func install(
@@ -490,6 +624,37 @@ private final class AndroidTVCallbackGate<Value: Sendable>: @unchecked Sendable 
         finish(.failure(error))
     }
 
+    func fail(
+        after timeout: TimeInterval,
+        with error: Error
+    ) {
+        let task = Task { [weak self] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(
+                    max(0, timeout) * 1_000_000_000
+                )
+            )
+
+            guard !Task.isCancelled else {
+                return
+            }
+
+            self?.fail(error)
+        }
+
+        lock.lock()
+
+        if resolved {
+            lock.unlock()
+            task.cancel()
+            return
+        }
+
+        timeoutTask?.cancel()
+        timeoutTask = task
+        lock.unlock()
+    }
+
     private func finish(
         _ result: Swift.Result<Value, Error>
     ) {
@@ -503,7 +668,11 @@ private final class AndroidTVCallbackGate<Value: Sendable>: @unchecked Sendable 
         resolved = true
         let continuation = self.continuation
         self.continuation = nil
+        let timeoutTask = self.timeoutTask
+        self.timeoutTask = nil
         lock.unlock()
+
+        timeoutTask?.cancel()
 
         switch result {
         case .success(let value):
@@ -514,10 +683,3 @@ private final class AndroidTVCallbackGate<Value: Sendable>: @unchecked Sendable 
     }
 }
 
-private extension TVControlError {
-    static func unreachableWith(
-        _ message: String
-    ) -> TVControlError {
-        .permissionDenied(message)
-    }
-}

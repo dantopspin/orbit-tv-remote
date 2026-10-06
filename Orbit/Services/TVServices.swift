@@ -195,6 +195,7 @@ extension TVControlling {
 enum TVControlError: LocalizedError {
     case unsupported
     case unreachable
+    case transport(String)
     case permissionDenied(String)
     case rejected(status: Int?, message: String?)
     case invalidResponse
@@ -205,6 +206,8 @@ enum TVControlError: LocalizedError {
             return "This control is not supported by the connected TV."
         case .unreachable:
             return "The TV could not be reached on your local network."
+        case .transport(let message):
+            return message
         case .permissionDenied(let message):
             return message
         case .rejected(_, let message):
@@ -216,7 +219,7 @@ enum TVControlError: LocalizedError {
 
     var affectsConnectionState: Bool {
         switch self {
-        case .unreachable:
+        case .unreachable, .transport:
             return true
         case .unsupported, .permissionDenied, .rejected, .invalidResponse:
             return false
@@ -879,32 +882,64 @@ final class RemoteFavoritesStore {
 
 @MainActor
 private final class RemoteCommandQueue {
+    private let maxPendingCommands = 6
+
     private var tail: Task<Void, Never>?
+    private var pendingCount = 0
+    private var generation = 0
 
     func enqueue(_ operation: @escaping @MainActor () async -> Void) {
-        let previous = tail
+        guard pendingCount < maxPendingCommands else {
+            return
+        }
 
-        let next = Task { @MainActor in
+        pendingCount += 1
+
+        let previous = tail
+        let currentGeneration = generation
+
+        let next = Task { @MainActor [weak self] in
             if let previous {
                 await previous.value
             }
 
-            guard !Task.isCancelled else { return }
+            guard let self else { return }
+
+            defer {
+                if self.generation == currentGeneration {
+                    self.pendingCount = max(
+                        0,
+                        self.pendingCount - 1
+                    )
+                }
+            }
+
+            guard !Task.isCancelled,
+                  self.generation == currentGeneration else {
+                return
+            }
+
             await operation()
         }
 
         tail = next
     }
 
-    func enqueueAndWait(_ operation: @escaping @MainActor () async throws -> Void) async throws {
+    func enqueueAndWait(
+        _ operation: @escaping @MainActor () async throws -> Void
+    ) async throws {
         let previous = tail
+        let currentGeneration = generation
 
-        let resultTask = Task { @MainActor () -> Result<Void, Error> in
+        let resultTask = Task {
+            @MainActor () -> Result<Void, Error> in
+
             if let previous {
                 await previous.value
             }
 
-            guard !Task.isCancelled else {
+            guard !Task.isCancelled,
+                  self.generation == currentGeneration else {
                 return .failure(CancellationError())
             }
 
@@ -929,8 +964,10 @@ private final class RemoteCommandQueue {
     }
 
     func cancel() {
+        generation += 1
         tail?.cancel()
         tail = nil
+        pendingCount = 0
     }
 }
 
