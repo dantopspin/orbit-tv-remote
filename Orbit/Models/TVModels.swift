@@ -141,3 +141,23 @@ struct TVConnectionInfo: Equatable, Sendable {
         self.pairingRequirement = pairingRequirement
     }
 }
+
+enum RemoteControlMode: String, Codable, CaseIterable, Hashable, Sendable {
+    case dpad
+    case touchpad
+
+    var title: String {
+        switch self {
+        case .dpad: return "D-pad"
+        case .touchpad: return "Touchpad"
+        }
+    }
+}
+
+struct RemoteCustomizationPreferences: Codable, Equatable, Sendable {
+    var defaultMode: RemoteControlMode = .dpad
+    var showInput = true
+    var showPlayback = true
+    var showKeyboard = true
+    var showApps = true
+}

@@ -21,6 +21,18 @@ struct SettingsView: View {
                 }
                 .tint(.secondary)
 
+                Section("Remote") {
+                    if appModel.purchases.isPremium {
+                        NavigationLink("Customize Remote") {
+                            CustomRemoteView()
+                        }
+                    } else {
+                        Button("Customize Remote") {
+                            showPremium = true
+                        }
+                    }
+                }
+
                 Section("Plan") {
                     HStack {
                         Text("Current plan")
@@ -104,6 +116,72 @@ struct SettingsView: View {
     }
 }
 
+private struct CustomRemoteView: View {
+    @Environment(AppModel.self) private var appModel
+
+    var body: some View {
+        Form {
+            Section("Default Control") {
+                Picker(
+                    "Open with",
+                    selection: Binding(
+                        get: { appModel.customization.preferences.defaultMode },
+                        set: { appModel.customization.setDefaultMode($0) }
+                    )
+                ) {
+                    ForEach(RemoteControlMode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+            }
+
+            Section("Visible Controls") {
+                Toggle(
+                    "Input",
+                    isOn: Binding(
+                        get: { appModel.customization.preferences.showInput },
+                        set: { appModel.customization.setShowInput($0) }
+                    )
+                )
+
+                Toggle(
+                    "Playback",
+                    isOn: Binding(
+                        get: { appModel.customization.preferences.showPlayback },
+                        set: { appModel.customization.setShowPlayback($0) }
+                    )
+                )
+
+                Toggle(
+                    "Keyboard",
+                    isOn: Binding(
+                        get: { appModel.customization.preferences.showKeyboard },
+                        set: { appModel.customization.setShowKeyboard($0) }
+                    )
+                )
+
+                Toggle(
+                    "Apps",
+                    isOn: Binding(
+                        get: { appModel.customization.preferences.showApps },
+                        set: { appModel.customization.setShowApps($0) }
+                    )
+                )
+            }
+
+            Section {
+                Button("Reset to Default") {
+                    appModel.customization.reset()
+                }
+            } footer: {
+                Text("Core navigation, Home, Back and volume controls remain available when the connected TV supports them.")
+            }
+        }
+        .navigationTitle("Customize Remote")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 private struct FAQView: View {
     var body: some View {
         List {
@@ -149,6 +227,12 @@ struct PremiumView: View {
                             icon: "tv.and.mediabox",
                             title: "Multiple TVs",
                             detail: "Save and switch between more than one TV."
+                        )
+
+                        PremiumFeature(
+                            icon: "slider.horizontal.3",
+                            title: "Custom Remote",
+                            detail: "Choose your default control mode and keep only the controls you use."
                         )
                     }
 

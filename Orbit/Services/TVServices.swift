@@ -557,6 +557,57 @@ final class PurchaseManager {
 }
 
 @MainActor
+@Observable
+final class RemoteCustomizationStore {
+    var preferences: RemoteCustomizationPreferences {
+        didSet { persist() }
+    }
+
+    init() {
+        if let data = UserDefaults.standard.data(
+            forKey: AppSettings.Keys.remoteCustomization
+        ),
+           let decoded = try? JSONDecoder().decode(
+               RemoteCustomizationPreferences.self,
+               from: data
+           ) {
+            preferences = decoded
+        } else {
+            preferences = RemoteCustomizationPreferences()
+        }
+    }
+
+    func setDefaultMode(_ mode: RemoteControlMode) {
+        preferences.defaultMode = mode
+    }
+
+    func setShowInput(_ value: Bool) {
+        preferences.showInput = value
+    }
+
+    func setShowPlayback(_ value: Bool) {
+        preferences.showPlayback = value
+    }
+
+    func setShowKeyboard(_ value: Bool) {
+        preferences.showKeyboard = value
+    }
+
+    func setShowApps(_ value: Bool) {
+        preferences.showApps = value
+    }
+
+    func reset() {
+        preferences = RemoteCustomizationPreferences()
+    }
+
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(preferences) else { return }
+        UserDefaults.standard.set(data, forKey: AppSettings.Keys.remoteCustomization)
+    }
+}
+
+@MainActor
 private final class RemoteCommandQueue {
     private var tail: Task<Void, Never>?
 
@@ -624,6 +675,7 @@ final class AppModel {
     let deviceStore = DeviceStore()
     let discovery = DiscoveryService()
     let purchases = PurchaseManager()
+    let customization = RemoteCustomizationStore()
 
     @ObservationIgnored private var adapter: TVControlling?
     @ObservationIgnored private var connectTask: Task<Void, Never>?
@@ -631,6 +683,11 @@ final class AppModel {
 
     init() {
         KeychainStore.prepareForCurrentInstall()
+
+        if UserDefaults.standard.string(forKey: AppSettings.Keys.freeDeviceID) == nil,
+           let selectedID = deviceStore.selectedDeviceID {
+            UserDefaults.standard.set(selectedID, forKey: AppSettings.Keys.freeDeviceID)
+        }
     }
 
     var currentDevice: TVDevice? {
@@ -660,11 +717,41 @@ final class AppModel {
         commandQueue.cancel()
 
         deviceStore.addOrUpdate(device)
+
+        if purchases.isPremium ||
+            UserDefaults.standard.string(forKey: AppSettings.Keys.freeDeviceID) == nil {
+            UserDefaults.standard.set(device.id, forKey: AppSettings.Keys.freeDeviceID)
+        }
+
         adapter = TVAdapterFactory.makeAdapter(for: device)
         currentCapabilities = device.capabilities
         pairingRequirement = .none
         lastControlError = nil
         connect()
+    }
+
+    func canUse(_ device: TVDevice) -> Bool {
+        if purchases.isPremium {
+            return true
+        }
+
+        let freeID = UserDefaults.standard.string(forKey: AppSettings.Keys.freeDeviceID)
+        return freeID == nil || freeID == device.id
+    }
+
+    @discardableResult
+    func activate(_ device: TVDevice) -> Bool {
+        guard canUse(device) else {
+            return false
+        }
+
+        if purchases.isPremium {
+            UserDefaults.standard.set(device.id, forKey: AppSettings.Keys.freeDeviceID)
+        }
+
+        deviceStore.select(device)
+        refreshSelection()
+        return true
     }
 
     func connect() {

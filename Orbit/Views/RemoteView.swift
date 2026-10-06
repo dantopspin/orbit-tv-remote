@@ -214,16 +214,11 @@ struct TouchpadView: View {
     }
 }
 
-enum RemoteMode: String, CaseIterable, Hashable {
-    case dpad = "D-pad"
-    case touchpad = "Touchpad"
-}
-
 struct RemoteView: View {
     @Environment(AppModel.self) private var appModel
     @AppStorage(AppSettings.Keys.keepScreenAwake) private var keepScreenAwake = true
 
-    @State private var mode: RemoteMode = .dpad
+    @State private var mode: RemoteControlMode = .dpad
     @State private var showMore = false
     @State private var showKeyboard = false
     @State private var showAppsInputs = false
@@ -247,42 +242,55 @@ struct RemoteView: View {
                 }
 
                 HStack {
-                    RoundRemoteButton(
-                        systemName: "power",
-                        destructivePower: true
-                    ) {
-                        appModel.send(.power)
+                    if appModel.currentCapabilities.contains(.power) {
+                        RoundRemoteButton(
+                            systemName: "power",
+                            destructivePower: true
+                        ) {
+                            appModel.send(.power)
+                        }
                     }
 
                     Spacer()
 
-                    Button {
-                        showAppsInputs = true
-                    } label: {
-                        Text("Input")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(width: 72, height: 46)
-                            .background(Capsule().fill(Color.orbitSurface))
+                    if appModel.currentCapabilities.contains(.inputSelection) &&
+                        shouldShowInput {
+                        Button {
+                            appsInputsInitialSelection = 1
+                            showAppsInputs = true
+                        } label: {
+                            Text("Input")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(width: 72, height: 46)
+                                .background(Capsule().fill(Color.orbitSurface))
+                        }
+                        .buttonStyle(OrbitPressStyle(cornerRadius: 23))
+                        .foregroundStyle(.primary)
                     }
-                    .buttonStyle(OrbitPressStyle(cornerRadius: 23))
-                    .foregroundStyle(.primary)
                 }
 
-                Picker("Remote mode", selection: $mode) {
-                    ForEach(RemoteMode.allCases, id: \.self) {
-                        Text($0.rawValue).tag($0)
+                if appModel.currentCapabilities.contains(.touchpad) {
+                    Picker("Remote mode", selection: $mode) {
+                        ForEach(RemoteControlMode.allCases, id: \.self) {
+                            Text($0.title).tag($0)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: mode) { _, _ in
-                    Haptics.shared.selection()
+                    .pickerStyle(.segmented)
+                    .onChange(of: mode) { _, newValue in
+                        Haptics.shared.selection()
+
+                        if appModel.purchases.isPremium {
+                            appModel.customization.setDefaultMode(newValue)
+                        }
+                    }
                 }
 
                 Group {
-                    if mode == .dpad {
-                        DPadView(onCommand: appModel.send)
-                    } else {
+                    if mode == .touchpad &&
+                        appModel.currentCapabilities.contains(.touchpad) {
                         TouchpadView(onCommand: appModel.send)
+                    } else {
+                        DPadView(onCommand: appModel.send)
                     }
                 }
                 .frame(width: dpadSize, height: dpadSize)
@@ -316,14 +324,16 @@ struct RemoteView: View {
                     VolumePill(onCommand: appModel.send)
                 }
 
-                if appModel.currentCapabilities.contains(.playback) {
+                if appModel.currentCapabilities.contains(.playback) &&
+                    shouldShowPlayback {
                     PlaybackRow(onCommand: appModel.send)
                 }
 
-                if appModel.currentCapabilities.contains(.keyboard) ||
-                    appModel.currentCapabilities.contains(.appLaunching) {
+                if (appModel.currentCapabilities.contains(.keyboard) && shouldShowKeyboard) ||
+                    (appModel.currentCapabilities.contains(.appLaunching) && shouldShowApps) {
                     HStack(spacing: 12) {
-                        if appModel.currentCapabilities.contains(.keyboard) {
+                        if appModel.currentCapabilities.contains(.keyboard) &&
+                            shouldShowKeyboard {
                             Button {
                                 showKeyboard = true
                             } label: {
@@ -333,7 +343,8 @@ struct RemoteView: View {
                             }
                         }
 
-                        if appModel.currentCapabilities.contains(.appLaunching) {
+                        if appModel.currentCapabilities.contains(.appLaunching) &&
+                            shouldShowApps {
                             Button {
                                 appsInputsInitialSelection = 0
                                 showAppsInputs = true
@@ -368,6 +379,7 @@ struct RemoteView: View {
         }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
+            mode = preferredMode
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
@@ -375,6 +387,38 @@ struct RemoteView: View {
         .onChange(of: keepScreenAwake) { _, value in
             UIApplication.shared.isIdleTimerDisabled = value
         }
+    }
+
+    private var preferredMode: RemoteControlMode {
+        guard appModel.purchases.isPremium else { return .dpad }
+
+        let preferred = appModel.customization.preferences.defaultMode
+        if preferred == .touchpad &&
+            !appModel.currentCapabilities.contains(.touchpad) {
+            return .dpad
+        }
+
+        return preferred
+    }
+
+    private var shouldShowInput: Bool {
+        !appModel.purchases.isPremium ||
+        appModel.customization.preferences.showInput
+    }
+
+    private var shouldShowPlayback: Bool {
+        !appModel.purchases.isPremium ||
+        appModel.customization.preferences.showPlayback
+    }
+
+    private var shouldShowKeyboard: Bool {
+        !appModel.purchases.isPremium ||
+        appModel.customization.preferences.showKeyboard
+    }
+
+    private var shouldShowApps: Bool {
+        !appModel.purchases.isPremium ||
+        appModel.customization.preferences.showApps
     }
 
     private var header: some View {

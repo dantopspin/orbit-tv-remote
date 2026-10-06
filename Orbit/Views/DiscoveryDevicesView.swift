@@ -155,9 +155,11 @@ struct DevicesView: View {
                 Section("Your TVs") {
                     ForEach(appModel.deviceStore.devices) { device in
                         Button {
-                            appModel.deviceStore.select(device)
-                            appModel.refreshSelection()
-                            dismiss()
+                            if appModel.activate(device) {
+                                dismiss()
+                            } else {
+                                showPremium = true
+                            }
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "tv")
@@ -173,6 +175,9 @@ struct DevicesView: View {
 
                                 if appModel.deviceStore.selectedDeviceID == device.id {
                                     Image(systemName: "checkmark.circle.fill")
+                                } else if !appModel.canUse(device) {
+                                    Image(systemName: "lock.fill")
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }
@@ -194,7 +199,7 @@ struct DevicesView: View {
 
                 if !appModel.purchases.isPremium {
                     Section {
-                        Text("Free includes 1 saved TV. Orbit Premium adds multiple TVs and rooms.")
+                        Text("Free includes 1 active saved TV. Extra TVs stay remembered if Premium expires.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

@@ -13,6 +13,8 @@ struct AppSettings {
         static let savedDevices = "orbit.savedDevices"
         static let premiumOverride = "orbit.premiumOverride"
         static let installationInitialized = "orbit.installationInitialized"
+        static let freeDeviceID = "orbit.freeDeviceID"
+        static let remoteCustomization = "orbit.remoteCustomization"
     }
 }
 
