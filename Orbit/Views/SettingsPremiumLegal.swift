@@ -38,6 +38,20 @@ struct SettingsView: View {
                             await appModel.purchases.restore()
                         }
                     }
+                    .disabled(appModel.purchases.isPurchasing)
+
+                    if appModel.purchases.isPremium {
+                        Link(
+                            "Manage Subscription",
+                            destination: URL(string: "https://apps.apple.com/account/subscriptions")!
+                        )
+                    }
+
+                    if let error = appModel.purchases.errorMessage {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Support & Legal") {
@@ -58,7 +72,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Version")
                         Spacer()
-                        Text("1.0 (1)")
+                        Text(appVersion)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -75,6 +89,18 @@ struct SettingsView: View {
                 PremiumView()
             }
         }
+    }
+
+    private var appVersion: String {
+        let version = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "—"
+
+        let build = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? "—"
+
+        return "\(version) (\(build))"
     }
 }
 
@@ -121,33 +147,24 @@ struct PremiumView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         PremiumFeature(
                             icon: "tv.and.mediabox",
-                            title: "Multiple TVs & Rooms",
-                            detail: "Save and switch between all your TVs."
-                        )
-
-                        PremiumFeature(
-                            icon: "slider.horizontal.3",
-                            title: "Custom Remote",
-                            detail: "Arrange controls and pin the things you use most."
-                        )
-
-                        PremiumFeature(
-                            icon: "square.grid.2x2",
-                            title: "Favorite Apps & Inputs",
-                            detail: "Keep your most-used destinations close."
+                            title: "Multiple TVs",
+                            detail: "Save and switch between more than one TV."
                         )
                     }
+
+                    Text("The full essential remote stays available on Free.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     VStack(spacing: 10) {
                         planRow(
                             id: PurchaseManager.weeklyID,
-                            fallback: "$3.99 / week",
                             badge: nil
                         )
 
                         planRow(
                             id: PurchaseManager.monthlyID,
-                            fallback: "$7.99 / month",
                             badge: "Best value"
                         )
                     }
@@ -158,19 +175,56 @@ struct PremiumView: View {
                         }
 
                         Task {
-                            await appModel.purchases.purchase(product)
+                            if await appModel.purchases.purchase(product) {
+                                dismiss()
+                            }
                         }
                     }
                     .buttonStyle(OrbitPrimaryButtonStyle())
-                    .disabled(appModel.purchases.product(id: selectedID) == nil)
+                    .disabled(
+                        appModel.purchases.product(id: selectedID) == nil ||
+                        appModel.purchases.isPurchasing
+                    )
+                    .overlay {
+                        if appModel.purchases.isPurchasing {
+                            ProgressView()
+                                .tint(Color(uiColor: .systemBackground))
+                        }
+                    }
+
+                    if appModel.purchases.isLoading &&
+                        appModel.purchases.products.isEmpty {
+                        ProgressView("Loading plans…")
+                            .font(.footnote)
+                    }
+
+                    if appModel.purchases.purchasePending {
+                        Text("Purchase pending approval. Premium will activate automatically when Apple completes it.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    if let error = appModel.purchases.errorMessage {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
 
                     Button("Restore Purchases") {
                         Task {
                             await appModel.purchases.restore()
                         }
                     }
+                    .disabled(appModel.purchases.isPurchasing)
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(.primary)
+
+                    Text("Payment is charged to your Apple ID at confirmation. Subscriptions renew automatically until canceled at least 24 hours before the end of the current period. You can manage or cancel in your App Store subscription settings.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
 
                     HStack(spacing: 16) {
                         NavigationLink("Terms") {
@@ -200,7 +254,6 @@ struct PremiumView: View {
     @ViewBuilder
     private func planRow(
         id: String,
-        fallback: String,
         badge: String?
     ) -> some View {
         let product = appModel.purchases.product(id: id)
@@ -217,13 +270,17 @@ struct PremiumView: View {
                     Text(id == PurchaseManager.weeklyID ? "Weekly" : "Monthly")
                         .font(.headline)
 
-                    Text(
-                        product.map {
-                            "\($0.displayPrice) / \(id == PurchaseManager.weeklyID ? "week" : "month")"
-                        } ?? fallback
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    if let product {
+                        Text(
+                            "\(product.displayPrice) / \(id == PurchaseManager.weeklyID ? "week" : "month")"
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    } else {
+                        Text("Loading price…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Spacer()
@@ -251,6 +308,7 @@ struct PremiumView: View {
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 18))
         .foregroundStyle(.primary)
+        .disabled(product == nil || appModel.purchases.isPurchasing)
     }
 }
 

@@ -12,6 +12,7 @@
     <BuildableProductRunnable runnableDebuggingMode="0">
       <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="0E8A3AD980EC179856012B7E" BuildableName="Orbit.app" BlueprintName="Orbit" ReferencedContainer="container:Orbit.xcodeproj"/>
     </BuildableProductRunnable>
+    <StoreKitConfigurationFileReference identifier="../../../Orbit/Resources/Orbit.storekit"/>
   </LaunchAction>
   <ProfileAction buildConfiguration="Release" shouldUseLaunchSchemeArgsEnv="YES" savedToolIdentifier="" useCustomWorkingDirectory="NO" debugDocumentVersioning="YES">
     <BuildableProductRunnable runnableDebuggingMode="0">

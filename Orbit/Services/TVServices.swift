@@ -426,6 +426,8 @@ final class PurchaseManager {
     private(set) var products: [Product] = []
     private(set) var isPremium = false
     private(set) var isLoading = false
+    private(set) var isPurchasing = false
+    private(set) var purchasePending = false
     var errorMessage: String?
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
@@ -441,6 +443,7 @@ final class PurchaseManager {
 
     func refresh() async {
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
 
         do {
@@ -455,25 +458,49 @@ final class PurchaseManager {
         }
     }
 
-    func purchase(_ product: Product) async {
+    @discardableResult
+    func purchase(_ product: Product) async -> Bool {
+        guard !isPurchasing else { return false }
+
+        isPurchasing = true
+        purchasePending = false
+        errorMessage = nil
+        defer { isPurchasing = false }
+
         do {
             let result = try await product.purchase()
+
             switch result {
             case .success(let verification):
                 let transaction = try verified(verification)
                 await transaction.finish()
                 await refreshEntitlements()
-            case .pending, .userCancelled:
-                break
+                return isPremium
+
+            case .pending:
+                purchasePending = true
+                return false
+
+            case .userCancelled:
+                return false
+
             @unknown default:
-                break
+                return false
             }
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 
     func restore() async {
+        guard !isPurchasing else { return }
+
+        isPurchasing = true
+        purchasePending = false
+        errorMessage = nil
+        defer { isPurchasing = false }
+
         do {
             try await AppStore.sync()
             await refreshEntitlements()
