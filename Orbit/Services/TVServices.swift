@@ -118,8 +118,36 @@ final class DeviceStore {
 }
 
 @MainActor
+final class TVAdapterEventEmitter {
+    let stream: AsyncStream<TVAdapterEvent>
+
+    private let continuation:
+        AsyncStream<TVAdapterEvent>.Continuation
+
+    init() {
+        var continuation:
+            AsyncStream<TVAdapterEvent>.Continuation?
+
+        self.stream = AsyncStream {
+            continuation = $0
+        }
+
+        self.continuation = continuation!
+    }
+
+    func yield(_ event: TVAdapterEvent) {
+        continuation.yield(event)
+    }
+
+    func finish() {
+        continuation.finish()
+    }
+}
+
+@MainActor
 protocol TVControlling: AnyObject {
     var device: TVDevice { get }
+    var events: AsyncStream<TVAdapterEvent> { get }
 
     func connect() async throws -> TVConnectionInfo
     func disconnect() async
@@ -139,6 +167,12 @@ protocol TVControlling: AnyObject {
 }
 
 extension TVControlling {
+    var events: AsyncStream<TVAdapterEvent> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
     func disconnect() async {}
 
     func pairingRequirement() async throws -> TVPairingRequirement {
@@ -916,6 +950,8 @@ final class AppModel {
 
     @ObservationIgnored private var adapter: TVControlling?
     @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private var reconnectTask: Task<Void, Never>?
+    @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var connectingDeviceID: String?
     @ObservationIgnored private let commandQueue = RemoteCommandQueue()
 
@@ -969,6 +1005,8 @@ final class AppModel {
 
     func select(_ device: TVDevice) {
         connectTask?.cancel()
+        reconnectTask?.cancel()
+        eventTask?.cancel()
         connectingDeviceID = nil
         commandQueue.cancel()
 
@@ -1083,6 +1121,13 @@ final class AppModel {
                 self.pairingRequirement = connection.pairingRequirement
                 self.lastControlError = nil
                 self.connectingDeviceID = nil
+
+                if case .none = connection.pairingRequirement {
+                    self.startEventMonitoring(
+                        adapter: adapter,
+                        deviceID: resolvedDevice.id
+                    )
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -1112,6 +1157,10 @@ final class AppModel {
     func appDidEnterBackground() {
         connectTask?.cancel()
         connectTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        eventTask?.cancel()
+        eventTask = nil
         connectingDeviceID = nil
         commandQueue.cancel()
 
@@ -1154,6 +1203,11 @@ final class AppModel {
             currentCapabilities = resolvedDevice.capabilities
             connectionState = .connected
             lastControlError = nil
+
+            startEventMonitoring(
+                adapter: adapter,
+                deviceID: resolvedDevice.id
+            )
             return true
         } catch {
             lastControlError = error.localizedDescription
@@ -1274,6 +1328,10 @@ final class AppModel {
 
         connectTask?.cancel()
         connectTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        eventTask?.cancel()
+        eventTask = nil
         connectingDeviceID = nil
         commandQueue.cancel()
 
@@ -1302,6 +1360,10 @@ final class AppModel {
     func refreshSelection() {
         connectTask?.cancel()
         connectTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        eventTask?.cancel()
+        eventTask = nil
         connectingDeviceID = nil
         commandQueue.cancel()
 
@@ -1324,6 +1386,81 @@ final class AppModel {
             } else if self.currentDevice == nil {
                 self.connectionState = .connecting
             }
+        }
+    }
+
+    private func startEventMonitoring(
+        adapter: TVControlling,
+        deviceID: String
+    ) {
+        eventTask?.cancel()
+
+        let stream = adapter.events
+
+        eventTask = Task { @MainActor [weak self, adapter] in
+            for await event in stream {
+                guard !Task.isCancelled,
+                      let self,
+                      self.adapter === adapter,
+                      self.currentDevice?.id == deviceID else {
+                    return
+                }
+
+                self.handleAdapterEvent(
+                    event,
+                    adapter: adapter,
+                    deviceID: deviceID
+                )
+            }
+        }
+    }
+
+    private func handleAdapterEvent(
+        _ event: TVAdapterEvent,
+        adapter: TVControlling,
+        deviceID: String
+    ) {
+        switch event {
+        case .disconnected(let message):
+            connectionState = .unavailable
+            lastControlError = message ??
+                "The TV connection was interrupted."
+            scheduleReconnect(
+                adapter: adapter,
+                deviceID: deviceID
+            )
+
+        case .powerStateChanged(let state):
+            connectionState = state
+
+        case .pairingRevoked(let message):
+            reconnectTask?.cancel()
+            connectionState = .unavailable
+            lastControlError = message ??
+                "The TV no longer recognizes Orbit. Pair it again."
+        }
+    }
+
+    private func scheduleReconnect(
+        adapter: TVControlling,
+        deviceID: String
+    ) {
+        reconnectTask?.cancel()
+
+        reconnectTask = Task { @MainActor [weak self, adapter] in
+            try? await Task.sleep(
+                nanoseconds: 1_500_000_000
+            )
+
+            guard !Task.isCancelled,
+                  let self,
+                  self.adapter === adapter,
+                  self.currentDevice?.id == deviceID,
+                  !self.requiresPairing else {
+                return
+            }
+
+            self.connect()
         }
     }
 

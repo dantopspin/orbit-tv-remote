@@ -98,6 +98,12 @@ struct TVInput: Identifiable, Hashable, Sendable {
     var name: String
 }
 
+enum TVAdapterEvent: Equatable, Sendable {
+    case disconnected(message: String?)
+    case powerStateChanged(TVConnectionState)
+    case pairingRevoked(message: String?)
+}
+
 enum TVConnectionState: Equatable, Sendable {
     case connecting
     case connected

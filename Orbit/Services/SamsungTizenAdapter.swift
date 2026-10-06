@@ -11,31 +11,28 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
 
     private let restSession: URLSession
     private let trustDelegate: SamsungLocalTrustDelegate
-    private let webSocketSession: URLSession
+    private let eventEmitter = TVAdapterEventEmitter()
 
-    private var webSocketTask: URLSessionWebSocketTask?
+    private var transport: JSONWebSocketTransport?
     private var metadata: SamsungTVMetadata?
+
+    var events: AsyncStream<TVAdapterEvent> {
+        eventEmitter.stream
+    }
 
     init(device: TVDevice) {
         self.device = device
 
-        let restConfiguration = URLSessionConfiguration.ephemeral
-        restConfiguration.timeoutIntervalForRequest = 2.5
-        restConfiguration.timeoutIntervalForResource = 4.0
-        restConfiguration.waitsForConnectivity = false
-        self.restSession = URLSession(configuration: restConfiguration)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 2.5
+        configuration.timeoutIntervalForResource = 4.0
+        configuration.waitsForConnectivity = false
 
-        let trustDelegate = SamsungLocalTrustDelegate(host: device.host)
-        self.trustDelegate = trustDelegate
-
-        let webSocketConfiguration = URLSessionConfiguration.ephemeral
-        webSocketConfiguration.timeoutIntervalForRequest = 5.0
-        webSocketConfiguration.timeoutIntervalForResource = 45.0
-        webSocketConfiguration.waitsForConnectivity = false
-        self.webSocketSession = URLSession(
-            configuration: webSocketConfiguration,
-            delegate: trustDelegate,
-            delegateQueue: nil
+        self.restSession = URLSession(
+            configuration: configuration
+        )
+        self.trustDelegate = SamsungLocalTrustDelegate(
+            host: device.host
         )
     }
 
@@ -52,16 +49,42 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
             deviceID: device.id
         )
 
-        let task = try makeWebSocketTask(token: storedCredential?.token)
-        webSocketTask = task
-        task.resume()
+        let url = try remoteURL(
+            token: storedCredential?.token
+        )
 
-        let firstMessage = try await task.receive()
-        let envelope = try parseEnvelope(firstMessage)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 0
+        configuration.waitsForConnectivity = false
+
+        let transport = JSONWebSocketTransport(
+            url: url,
+            configuration: configuration,
+            delegate: trustDelegate
+        )
+        self.transport = transport
+
+        transport.onUnexpectedClose = {
+            [weak eventEmitter] error in
+
+            eventEmitter?.yield(
+                .disconnected(
+                    message: error?.localizedDescription
+                )
+            )
+        }
+
+        transport.start()
+
+        let data = try await transport.nextEvent(
+            timeout: 60
+        )
+        let envelope = try parseEnvelope(data)
 
         guard envelope.event == "ms.channel.connect" else {
-            task.cancel(with: .goingAway, reason: nil)
-            webSocketTask = nil
+            transport.disconnect()
+            self.transport = nil
 
             if envelope.event == "ms.channel.unauthorized" {
                 throw TVControlError.permissionDenied(
@@ -74,12 +97,33 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
             )
         }
 
-        if let token = envelope.token, !token.isEmpty {
+        if let token = envelope.token,
+           !token.isEmpty {
             try? PairingCredentialStore.save(
                 SamsungCredential(token: token),
                 platform: .samsung,
                 deviceID: device.id
             )
+        }
+
+        transport.onEvent = {
+            [weak eventEmitter] data in
+
+            guard let root = try? JSONSerialization.jsonObject(
+                with: data
+            ) as? [String: Any],
+            let event = root["event"] as? String else {
+                return
+            }
+
+            if event == "ms.channel.unauthorized" {
+                eventEmitter?.yield(
+                    .pairingRevoked(
+                        message:
+                            "Samsung TV revoked Orbit’s remote access. Pair the TV again."
+                    )
+                )
+            }
         }
 
         return TVConnectionInfo(
@@ -90,26 +134,37 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
     }
 
     func disconnect() async {
-        webSocketTask?.cancel(with: .normalClosure, reason: nil)
-        webSocketTask = nil
+        transport?.disconnect()
+        transport = nil
     }
 
     func send(_ command: RemoteCommand) async throws {
-        try await sendKey(try key(for: command), command: "Click")
+        try await sendKey(
+            try key(for: command),
+            command: "Click"
+        )
     }
 
     func beginPress(_ command: RemoteCommand) async throws {
-        try await sendKey(try key(for: command), command: "Press")
+        try await sendKey(
+            try key(for: command),
+            command: "Press"
+        )
     }
 
     func endPress(_ command: RemoteCommand) async throws {
-        try await sendKey(try key(for: command), command: "Release")
+        try await sendKey(
+            try key(for: command),
+            command: "Release"
+        )
     }
 
     func send(text: String) async throws {
         guard !text.isEmpty else { return }
 
-        let encoded = Data(text.utf8).base64EncodedString()
+        let encoded = Data(
+            text.utf8
+        ).base64EncodedString()
 
         try await sendJSON([
             "method": "ms.remote.control",
@@ -147,23 +202,40 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
     }
 
     func select(input: TVInput) async throws {
-        try await sendKey(input.id, command: "Click")
+        try await sendKey(
+            input.id,
+            command: "Click"
+        )
     }
 
     private func fetchMetadata() async throws -> SamsungTVMetadata {
-        guard let url = URL(string: "http://\(device.host):\(Self.restPort)/api/v2/") else {
+        guard let url = URL(
+            string:
+                "http://\(device.host):\(Self.restPort)/api/v2/"
+        ) else {
             throw TVControlError.invalidResponse
         }
 
         do {
-            let (data, response) = try await restSession.data(from: url)
+            let (data, response) = try await restSession.data(
+                from: url
+            )
 
-            guard let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                throw TVControlError.unreachable
+            guard let http = response as? HTTPURLResponse else {
+                throw TVControlError.invalidResponse
             }
 
-            return try SamsungTVMetadata.parse(data: data)
+            guard (200..<300).contains(http.statusCode) else {
+                throw TVControlError.rejected(
+                    status: http.statusCode,
+                    message:
+                        "Samsung TV rejected the metadata request."
+                )
+            }
+
+            return try SamsungTVMetadata.parse(
+                data: data
+            )
         } catch let error as TVControlError {
             throw error
         } catch {
@@ -171,7 +243,9 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
         }
     }
 
-    private func resolvedDevice(from metadata: SamsungTVMetadata) -> TVDevice {
+    private func resolvedDevice(
+        from metadata: SamsungTVMetadata
+    ) -> TVDevice {
         let stableID = metadata.stableID ?? device.id
 
         return TVDevice(
@@ -195,22 +269,33 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
         )
     }
 
-    private func makeWebSocketTask(token: String?) throws -> URLSessionWebSocketTask {
+    private func remoteURL(
+        token: String?
+    ) throws -> URL {
         var components = URLComponents()
         components.scheme = "wss"
         components.host = device.host
         components.port = device.port ?? Self.securePort
-        components.path = "/api/v2/channels/samsung.remote.control"
+        components.path =
+            "/api/v2/channels/samsung.remote.control"
 
         var queryItems = [
             URLQueryItem(
                 name: "name",
-                value: Data(Self.appName.utf8).base64EncodedString()
+                value: Data(
+                    Self.appName.utf8
+                ).base64EncodedString()
             )
         ]
 
-        if let token, !token.isEmpty {
-            queryItems.append(URLQueryItem(name: "token", value: token))
+        if let token,
+           !token.isEmpty {
+            queryItems.append(
+                URLQueryItem(
+                    name: "token",
+                    value: token
+                )
+            )
         }
 
         components.queryItems = queryItems
@@ -219,10 +304,13 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
             throw TVControlError.invalidResponse
         }
 
-        return webSocketSession.webSocketTask(with: url)
+        return url
     }
 
-    private func sendKey(_ key: String, command: String) async throws {
+    private func sendKey(
+        _ key: String,
+        command: String
+    ) async throws {
         try await sendJSON([
             "method": "ms.remote.control",
             "params": [
@@ -234,41 +322,24 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
         ])
     }
 
-    private func sendJSON(_ object: [String: Any]) async throws {
-        guard let task = webSocketTask else {
+    private func sendJSON(
+        _ object: [String: Any]
+    ) async throws {
+        guard let transport else {
             throw TVControlError.unreachable
         }
 
-        let data = try JSONSerialization.data(withJSONObject: object)
-        guard let string = String(data: data, encoding: .utf8) else {
-            throw TVControlError.invalidResponse
-        }
-
-        do {
-            try await task.send(.string(string))
-        } catch {
-            throw TVControlError.unreachable
-        }
+        try await transport.sendJSONObject(
+            object
+        )
     }
 
     private func parseEnvelope(
-        _ message: URLSessionWebSocketTask.Message
+        _ data: Data
     ) throws -> SamsungWebSocketEnvelope {
-        let data: Data
-
-        switch message {
-        case .string(let string):
-            guard let encoded = string.data(using: .utf8) else {
-                throw TVControlError.invalidResponse
-            }
-            data = encoded
-        case .data(let payload):
-            data = payload
-        @unknown default:
-            throw TVControlError.invalidResponse
-        }
-
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let root = try JSONSerialization.jsonObject(
+            with: data
+        ) as? [String: Any] else {
             throw TVControlError.invalidResponse
         }
 
@@ -276,45 +347,33 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
         let eventData = root["data"] as? [String: Any]
         let token = eventData?["token"] as? String
 
-        return SamsungWebSocketEnvelope(event: event, token: token)
+        return SamsungWebSocketEnvelope(
+            event: event,
+            token: token
+        )
     }
 
-    private func key(for command: RemoteCommand) throws -> String {
+    private func key(
+        for command: RemoteCommand
+    ) throws -> String {
         switch command {
-        case .power:
-            return "KEY_POWER"
-        case .up:
-            return "KEY_UP"
-        case .down:
-            return "KEY_DOWN"
-        case .left:
-            return "KEY_LEFT"
-        case .right:
-            return "KEY_RIGHT"
-        case .select:
-            return "KEY_ENTER"
-        case .back:
-            return "KEY_RETURN"
-        case .home:
-            return "KEY_HOME"
-        case .volumeUp:
-            return "KEY_VOLUP"
-        case .volumeDown:
-            return "KEY_VOLDOWN"
-        case .mute:
-            return "KEY_MUTE"
-        case .rewind:
-            return "KEY_REWIND"
-        case .play:
-            return "KEY_PLAY"
-        case .pause:
-            return "KEY_PAUSE"
-        case .fastForward:
-            return "KEY_FF"
-        case .channelUp:
-            return "KEY_CHUP"
-        case .channelDown:
-            return "KEY_CHDOWN"
+        case .power: return "KEY_POWER"
+        case .up: return "KEY_UP"
+        case .down: return "KEY_DOWN"
+        case .left: return "KEY_LEFT"
+        case .right: return "KEY_RIGHT"
+        case .select: return "KEY_ENTER"
+        case .back: return "KEY_RETURN"
+        case .home: return "KEY_HOME"
+        case .volumeUp: return "KEY_VOLUP"
+        case .volumeDown: return "KEY_VOLDOWN"
+        case .mute: return "KEY_MUTE"
+        case .rewind: return "KEY_REWIND"
+        case .play: return "KEY_PLAY"
+        case .pause: return "KEY_PAUSE"
+        case .fastForward: return "KEY_FF"
+        case .channelUp: return "KEY_CHUP"
+        case .channelDown: return "KEY_CHDOWN"
         }
     }
 }
@@ -339,9 +398,13 @@ private struct SamsungTVMetadata {
         return powerState.lowercased() == "off"
     }
 
-    static func parse(data: Data) throws -> SamsungTVMetadata {
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let device = root["device"] as? [String: Any] else {
+    static func parse(
+        data: Data
+    ) throws -> SamsungTVMetadata {
+        guard let root = try JSONSerialization.jsonObject(
+            with: data
+        ) as? [String: Any],
+        let device = root["device"] as? [String: Any] else {
             throw TVControlError.invalidResponse
         }
 
@@ -351,7 +414,9 @@ private struct SamsungTVMetadata {
         }
 
         let rawName = device["name"] as? String
-        let name = rawName?.removingPercentEncoding ?? rawName
+        let name =
+            rawName?.removingPercentEncoding ??
+            rawName
 
         let stableID =
             (device["id"] as? String) ??
@@ -367,7 +432,11 @@ private struct SamsungTVMetadata {
     }
 }
 
-private final class SamsungLocalTrustDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
+private final class SamsungLocalTrustDelegate:
+    NSObject,
+    URLSessionDelegate,
+    @unchecked Sendable {
+
     private let host: String
 
     init(host: String) {
@@ -377,28 +446,54 @@ private final class SamsungLocalTrustDelegate: NSObject, URLSessionDelegate, @un
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        completionHandler:
+            @escaping (
+                URLSession.AuthChallengeDisposition,
+                URLCredential?
+            ) -> Void
     ) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+        guard challenge.protectionSpace.authenticationMethod ==
+                NSURLAuthenticationMethodServerTrust,
               challenge.protectionSpace.host == host,
               isPrivateIPv4(host),
               let trust = challenge.protectionSpace.serverTrust else {
-            completionHandler(.performDefaultHandling, nil)
+            completionHandler(
+                .performDefaultHandling,
+                nil
+            )
             return
         }
 
-        completionHandler(.useCredential, URLCredential(trust: trust))
+        completionHandler(
+            .useCredential,
+            URLCredential(trust: trust)
+        )
     }
 
-    private func isPrivateIPv4(_ value: String) -> Bool {
-        let parts = value.split(separator: ".").compactMap { Int($0) }
-        guard parts.count == 4 else { return false }
+    private func isPrivateIPv4(
+        _ value: String
+    ) -> Bool {
+        let parts = value
+            .split(separator: ".")
+            .compactMap { Int($0) }
+
+        guard parts.count == 4 else {
+            return false
+        }
 
         if parts[0] == 10 { return true }
-        if parts[0] == 172 && (16...31).contains(parts[1]) { return true }
-        if parts[0] == 192 && parts[1] == 168 { return true }
-        if parts[0] == 169 && parts[1] == 254 { return true }
-        if parts[0] == 100 && (64...127).contains(parts[1]) { return true }
+        if parts[0] == 172 &&
+            (16...31).contains(parts[1]) {
+            return true
+        }
+        if parts[0] == 192 &&
+            parts[1] == 168 {
+            return true
+        }
+        if parts[0] == 169 &&
+            parts[1] == 254 {
+            return true
+        }
 
         return false
     }

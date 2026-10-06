@@ -7,6 +7,11 @@ final class AndroidTVAdapter: TVControlling {
     private(set) var device: TVDevice
 
     private let serverKeyBox = AndroidTVServerKeyBox()
+    private let eventEmitter = TVAdapterEventEmitter()
+
+    var events: AsyncStream<TVAdapterEvent> {
+        eventEmitter.stream
+    }
 
     private var tlsManager: TLSManager?
     private var cryptoManager: CryptoManager?
@@ -21,17 +26,8 @@ final class AndroidTVAdapter: TVControlling {
         try prepareProtocolManagersIfNeeded()
 
         if hasPairingMarker {
-            do {
-                try await connectRemote()
-                return connectedInfo()
-            } catch {
-                PairingCredentialStore.remove(
-                    platform: .androidTV,
-                    deviceID: device.id
-                )
-                remoteManager?.disconnect()
-                remoteManager = nil
-            }
+            try await connectRemote()
+            return connectedInfo()
         }
 
         let requirement = try await pairingRequirement()
@@ -374,6 +370,26 @@ final class AndroidTVAdapter: TVControlling {
                 device.host,
                 timeout: 8
             )
+        }
+
+        manager.stateChanged = { [weak self] state in
+            switch state {
+            case .error(let error):
+                let message = AndroidTVAdapter.userMessage(
+                    for: error
+                )
+
+                Task { @MainActor [weak self] in
+                    self?.eventEmitter.yield(
+                        .disconnected(
+                            message: message
+                        )
+                    )
+                }
+
+            default:
+                break
+            }
         }
     }
 

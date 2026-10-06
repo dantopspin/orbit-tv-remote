@@ -9,27 +9,21 @@ final class LGWebOSAdapter: NSObject, TVControlling {
     private static let plainPort = 3000
 
     private let trustDelegate: LGLocalTrustDelegate
-    private let webSocketSession: URLSession
+    private let eventEmitter = TVAdapterEventEmitter()
 
-    private var mainTask: URLSessionWebSocketTask?
+    private var transport: JSONWebSocketTransport?
+    private var pointerSession: URLSession?
     private var pointerTask: URLSessionWebSocketTask?
     private var requestCounter = 0
 
+    var events: AsyncStream<TVAdapterEvent> {
+        eventEmitter.stream
+    }
+
     init(device: TVDevice) {
         self.device = device
-
-        let delegate = LGLocalTrustDelegate(host: device.host)
-        self.trustDelegate = delegate
-
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 5.0
-        configuration.timeoutIntervalForResource = 45.0
-        configuration.waitsForConnectivity = false
-
-        self.webSocketSession = URLSession(
-            configuration: configuration,
-            delegate: delegate,
-            delegateQueue: nil
+        self.trustDelegate = LGLocalTrustDelegate(
+            host: device.host
         )
     }
 
@@ -37,17 +31,28 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         await disconnect()
 
         do {
-            try await connect(using: "wss", port: Self.securePort)
+            try await connect(
+                using: "wss",
+                port: Self.securePort
+            )
         } catch let error as TVControlError {
             if case .permissionDenied = error {
                 throw error
             }
 
             await disconnect()
-            try await connect(using: "ws", port: Self.plainPort)
+
+            try await connect(
+                using: "ws",
+                port: Self.plainPort
+            )
         } catch {
             await disconnect()
-            try await connect(using: "ws", port: Self.plainPort)
+
+            try await connect(
+                using: "ws",
+                port: Self.plainPort
+            )
         }
 
         let capabilities: Set<TVCapability> = [
@@ -75,19 +80,32 @@ final class LGWebOSAdapter: NSObject, TVControlling {
     }
 
     func disconnect() async {
-        pointerTask?.cancel(with: .normalClosure, reason: nil)
+        pointerTask?.cancel(
+            with: .normalClosure,
+            reason: nil
+        )
         pointerTask = nil
 
-        mainTask?.cancel(with: .normalClosure, reason: nil)
-        mainTask = nil
+        pointerSession?.invalidateAndCancel()
+        pointerSession = nil
+
+        transport?.disconnect()
+        transport = nil
     }
 
     func send(_ command: RemoteCommand) async throws {
         switch command {
         case .power:
-            _ = try await request(uri: "ssap://system/turnOff")
+            _ = try await request(
+                uri: "ssap://system/turnOff"
+            )
+
         default:
-            try await sendPointerButton(try pointerButton(for: command))
+            try await sendPointerButton(
+                try pointerButton(
+                    for: command
+                )
+            )
         }
     }
 
@@ -95,7 +113,8 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         guard !text.isEmpty else { return }
 
         _ = try await request(
-            uri: "ssap://com.webos.service.ime/insertText",
+            uri:
+                "ssap://com.webos.service.ime/insertText",
             payload: [
                 "text": text,
                 "replace": 0
@@ -105,32 +124,56 @@ final class LGWebOSAdapter: NSObject, TVControlling {
 
     func apps() async throws -> [TVApp] {
         let payload = try await request(
-            uri: "ssap://com.webos.applicationManager/listLaunchPoints"
+            uri:
+                "ssap://com.webos.applicationManager/listLaunchPoints"
         )
 
-        guard let launchPoints = payload["launchPoints"] as? [[String: Any]] else {
+        guard let launchPoints =
+            payload["launchPoints"] as? [[String: Any]] else {
             return []
         }
 
         return launchPoints.compactMap { item in
-            guard let id = item["id"] as? String else { return nil }
-            let title = (item["title"] as? String) ?? id
-            return TVApp(id: id, name: title)
+            guard let id = item["id"] as? String else {
+                return nil
+            }
+
+            return TVApp(
+                id: id,
+                name:
+                    (item["title"] as? String) ??
+                    id
+            )
         }
-        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        .sorted {
+            $0.name.localizedCaseInsensitiveCompare(
+                $1.name
+            ) == .orderedAscending
+        }
     }
 
     func inputs() async throws -> [TVInput] {
-        let payload = try await request(uri: "ssap://tv/getExternalInputList")
+        let payload = try await request(
+            uri:
+                "ssap://tv/getExternalInputList"
+        )
 
-        guard let devices = payload["devices"] as? [[String: Any]] else {
+        guard let devices =
+            payload["devices"] as? [[String: Any]] else {
             return []
         }
 
         return devices.compactMap { item in
-            guard let id = item["id"] as? String else { return nil }
-            let label = (item["label"] as? String) ?? id
-            return TVInput(id: id, name: label)
+            guard let id = item["id"] as? String else {
+                return nil
+            }
+
+            return TVInput(
+                id: id,
+                name:
+                    (item["label"] as? String) ??
+                    id
+            )
         }
     }
 
@@ -148,14 +191,44 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         )
     }
 
-    private func connect(using scheme: String, port: Int) async throws {
-        guard let url = URL(string: "\(scheme)://\(device.host):\(port)") else {
+    private func connect(
+        using scheme: String,
+        port: Int
+    ) async throws {
+        guard let url = URL(
+            string:
+                "\(scheme)://\(device.host):\(port)"
+        ) else {
             throw TVControlError.invalidResponse
         }
 
-        let task = webSocketSession.webSocketTask(with: url)
-        mainTask = task
-        task.resume()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 0
+        configuration.waitsForConnectivity = false
+
+        let transport = JSONWebSocketTransport(
+            url: url,
+            configuration: configuration,
+            delegate:
+                scheme == "wss"
+                ? trustDelegate
+                : nil
+        )
+
+        self.transport = transport
+
+        transport.onUnexpectedClose = {
+            [weak eventEmitter] error in
+
+            eventEmitter?.yield(
+                .disconnected(
+                    message: error?.localizedDescription
+                )
+            )
+        }
+
+        transport.start()
 
         let credential = try? PairingCredentialStore.load(
             LGCredential.self,
@@ -163,45 +236,75 @@ final class LGWebOSAdapter: NSObject, TVControlling {
             deviceID: device.id
         )
 
-        let registration = registrationMessage(clientKey: credential?.clientKey)
-        try await sendJSON(registration, on: task)
+        try await transport.sendJSONObject(
+            registrationMessage(
+                clientKey: credential?.clientKey
+            )
+        )
 
         var sawPrompt = false
 
-        for _ in 0..<4 {
-            let message: URLSessionWebSocketTask.Message
-
-            do {
-                message = try await task.receive()
-            } catch {
-                throw TVControlError.unreachable
-            }
-
-            let root = try decode(message)
+        for _ in 0..<8 {
+            let data = try await transport.nextEvent(
+                timeout: 60
+            )
+            let root = try decode(data)
 
             if root["type"] as? String == "response",
-               let payload = root["payload"] as? [String: Any],
-               let pairingType = payload["pairingType"] as? String {
-                sawPrompt = pairingType.uppercased() == "PROMPT"
+               let payload =
+                   root["payload"] as? [String: Any],
+               let pairingType =
+                   payload["pairingType"] as? String {
+                sawPrompt =
+                    pairingType.uppercased() ==
+                    "PROMPT"
                 continue
             }
 
             if root["type"] as? String == "registered",
-               let payload = root["payload"] as? [String: Any],
-               let clientKey = payload["client-key"] as? String,
+               let payload =
+                   root["payload"] as? [String: Any],
+               let clientKey =
+                   payload["client-key"] as? String,
                !clientKey.isEmpty {
                 try? PairingCredentialStore.save(
-                    LGCredential(clientKey: clientKey),
+                    LGCredential(
+                        clientKey: clientKey
+                    ),
                     platform: .lgWebOS,
                     deviceID: device.id
                 )
+
+                transport.onEvent = {
+                    [weak eventEmitter] data in
+
+                    guard let root = try? JSONSerialization.jsonObject(
+                        with: data
+                    ) as? [String: Any],
+                    root["type"] as? String == "error" else {
+                        return
+                    }
+
+                    let message =
+                        root["error"] as? String
+
+                    eventEmitter?.yield(
+                        .disconnected(
+                            message: message
+                        )
+                    )
+                }
+
                 return
             }
 
             if root["type"] as? String == "error" {
-                let message = (root["error"] as? String) ?? "Pairing failed."
+                let message =
+                    (root["error"] as? String) ??
+                    "Pairing failed."
 
-                if message.contains("403") || sawPrompt {
+                if message.contains("403") ||
+                    sawPrompt {
                     throw TVControlError.permissionDenied(
                         "LG TV denied Orbit. Connect again and accept the pairing prompt on your TV."
                     )
@@ -218,15 +321,38 @@ final class LGWebOSAdapter: NSObject, TVControlling {
 
     private func connectPointerSocket() async throws {
         let payload = try await request(
-            uri: "ssap://com.webos.service.networkinput/getPointerInputSocket"
+            uri:
+                "ssap://com.webos.service.networkinput/getPointerInputSocket"
         )
 
-        guard let socketPath = payload["socketPath"] as? String,
-              let url = URL(string: socketPath) else {
+        guard let socketPath =
+            payload["socketPath"] as? String,
+              let url = URL(
+                  string: socketPath
+              ) else {
             throw TVControlError.invalidResponse
         }
 
-        let task = webSocketSession.webSocketTask(with: url)
+        let configuration =
+            URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 0
+        configuration.waitsForConnectivity = false
+
+        let session = URLSession(
+            configuration: configuration,
+            delegate:
+                url.scheme == "wss"
+                ? trustDelegate
+                : nil,
+            delegateQueue: nil
+        )
+
+        pointerSession = session
+
+        let task = session.webSocketTask(
+            with: url
+        )
         pointerTask = task
         task.resume()
     }
@@ -235,7 +361,7 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         uri: String,
         payload: [String: Any]? = nil
     ) async throws -> [String: Any] {
-        guard let task = mainTask else {
+        guard let transport else {
             throw TVControlError.unreachable
         }
 
@@ -252,54 +378,58 @@ final class LGWebOSAdapter: NSObject, TVControlling {
             object["payload"] = payload
         }
 
-        try await sendJSON(object, on: task)
+        let data = try await transport.requestJSONObject(
+            object,
+            id: id,
+            timeout: 8
+        )
+        let response = try decode(data)
 
-        for _ in 0..<8 {
-            let message: URLSessionWebSocketTask.Message
+        if response["type"] as? String == "error" {
+            let message =
+                response["error"] as? String ??
+                "LG TV rejected the request."
 
-            do {
-                message = try await task.receive()
-            } catch {
-                throw TVControlError.unreachable
+            if message.contains("401") ||
+                message.contains("403") {
+                throw TVControlError.permissionDenied(
+                    message
+                )
             }
 
-            let response = try decode(message)
-
-            guard response["id"] as? String == id else {
-                continue
-            }
-
-            if response["type"] as? String == "error" {
-                let message = response["error"] as? String ?? "LG TV rejected the request."
-
-                if message.contains("401") || message.contains("403") {
-                    throw TVControlError.permissionDenied(message)
-                }
-
-                throw TVControlError.invalidResponse
-            }
-
-            return (response["payload"] as? [String: Any]) ?? [:]
+            throw TVControlError.rejected(
+                status: nil,
+                message: message
+            )
         }
 
-        throw TVControlError.invalidResponse
+        return (
+            response["payload"] as? [String: Any]
+        ) ?? [:]
     }
 
-    private func sendPointerButton(_ name: String) async throws {
+    private func sendPointerButton(
+        _ name: String
+    ) async throws {
         guard let task = pointerTask else {
             throw TVControlError.unreachable
         }
 
-        let message = "type:button\nname:\(name)\n\n"
+        let message =
+            "type:button\nname:\(name)\n\n"
 
         do {
-            try await task.send(.string(message))
+            try await task.send(
+                .string(message)
+            )
         } catch {
             throw TVControlError.unreachable
         }
     }
 
-    private func pointerButton(for command: RemoteCommand) throws -> String {
+    private func pointerButton(
+        for command: RemoteCommand
+    ) throws -> String {
         switch command {
         case .power:
             throw TVControlError.unsupported
@@ -338,7 +468,9 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         }
     }
 
-    private func registrationMessage(clientKey: String?) -> [String: Any] {
+    private func registrationMessage(
+        clientKey: String?
+    ) -> [String: Any] {
         var payload: [String: Any] = [
             "forcePairing": false,
             "pairingType": "PROMPT",
@@ -369,7 +501,8 @@ final class LGWebOSAdapter: NSObject, TVControlling {
             ]
         ]
 
-        if let clientKey, !clientKey.isEmpty {
+        if let clientKey,
+           !clientKey.isEmpty {
             payload["client-key"] = clientKey
         }
 
@@ -380,41 +513,12 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         ]
     }
 
-    private func sendJSON(
-        _ object: [String: Any],
-        on task: URLSessionWebSocketTask
-    ) async throws {
-        let data = try JSONSerialization.data(withJSONObject: object)
-
-        guard let string = String(data: data, encoding: .utf8) else {
-            throw TVControlError.invalidResponse
-        }
-
-        do {
-            try await task.send(.string(string))
-        } catch {
-            throw TVControlError.unreachable
-        }
-    }
-
     private func decode(
-        _ message: URLSessionWebSocketTask.Message
+        _ data: Data
     ) throws -> [String: Any] {
-        let data: Data
-
-        switch message {
-        case .string(let string):
-            guard let encoded = string.data(using: .utf8) else {
-                throw TVControlError.invalidResponse
-            }
-            data = encoded
-        case .data(let payload):
-            data = payload
-        @unknown default:
-            throw TVControlError.invalidResponse
-        }
-
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let root = try JSONSerialization.jsonObject(
+            with: data
+        ) as? [String: Any] else {
             throw TVControlError.invalidResponse
         }
 
@@ -426,7 +530,11 @@ private struct LGCredential: Codable {
     let clientKey: String
 }
 
-private final class LGLocalTrustDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
+private final class LGLocalTrustDelegate:
+    NSObject,
+    URLSessionDelegate,
+    @unchecked Sendable {
+
     private let host: String
 
     init(host: String) {
@@ -436,28 +544,54 @@ private final class LGLocalTrustDelegate: NSObject, URLSessionDelegate, @uncheck
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        completionHandler:
+            @escaping (
+                URLSession.AuthChallengeDisposition,
+                URLCredential?
+            ) -> Void
     ) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+        guard challenge.protectionSpace.authenticationMethod ==
+                NSURLAuthenticationMethodServerTrust,
               challenge.protectionSpace.host == host,
               isPrivateIPv4(host),
               let trust = challenge.protectionSpace.serverTrust else {
-            completionHandler(.performDefaultHandling, nil)
+            completionHandler(
+                .performDefaultHandling,
+                nil
+            )
             return
         }
 
-        completionHandler(.useCredential, URLCredential(trust: trust))
+        completionHandler(
+            .useCredential,
+            URLCredential(trust: trust)
+        )
     }
 
-    private func isPrivateIPv4(_ value: String) -> Bool {
-        let parts = value.split(separator: ".").compactMap { Int($0) }
-        guard parts.count == 4 else { return false }
+    private func isPrivateIPv4(
+        _ value: String
+    ) -> Bool {
+        let parts = value
+            .split(separator: ".")
+            .compactMap { Int($0) }
+
+        guard parts.count == 4 else {
+            return false
+        }
 
         if parts[0] == 10 { return true }
-        if parts[0] == 172 && (16...31).contains(parts[1]) { return true }
-        if parts[0] == 192 && parts[1] == 168 { return true }
-        if parts[0] == 169 && parts[1] == 254 { return true }
-        if parts[0] == 100 && (64...127).contains(parts[1]) { return true }
+        if parts[0] == 172 &&
+            (16...31).contains(parts[1]) {
+            return true
+        }
+        if parts[0] == 192 &&
+            parts[1] == 168 {
+            return true
+        }
+        if parts[0] == 169 &&
+            parts[1] == 254 {
+            return true
+        }
 
         return false
     }
