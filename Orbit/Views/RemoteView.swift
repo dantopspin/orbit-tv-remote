@@ -404,6 +404,20 @@ struct RemoteView: View {
         .sheet(isPresented: pairingPresented) {
             TVPairingSheet()
         }
+        .sheet(
+            isPresented: Binding(
+                get: {
+                    appModel.proGateRequested
+                },
+                set: { presented in
+                    if !presented {
+                        appModel.dismissProGate()
+                    }
+                }
+            )
+        ) {
+            PremiumView()
+        }
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = keepScreenAwake
             mode = preferredMode

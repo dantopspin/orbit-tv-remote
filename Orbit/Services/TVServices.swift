@@ -1609,6 +1609,7 @@ final class AppModel {
     var currentCapabilities: Set<TVCapability> = []
     var pairingRequirement: TVPairingRequirement = .none
     var lastControlError: String?
+    var proGateRequested = false
 
     let deviceStore = DeviceStore()
     let discovery = DiscoveryService()
@@ -1622,6 +1623,8 @@ final class AppModel {
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var connectingDeviceID: String?
     @ObservationIgnored private var wasBackgrounded = false
+    @ObservationIgnored private var pendingFreeVerification:
+        (freeDeviceID: String, candidateDeviceID: String)?
     @ObservationIgnored private let commandQueue = RemoteCommandQueue()
 
     init() {
@@ -1723,8 +1726,21 @@ final class AppModel {
 
     @discardableResult
     func select(_ device: TVDevice) -> Bool {
-        guard canAddOrUse(device) else {
-            return false
+        pendingFreeVerification = nil
+
+        if !purchases.isPremium,
+           let freeID = UserDefaults.standard.string(
+               forKey:
+                   AppSettings.Keys.freeDeviceID
+           ),
+           !deviceStore.matchesStoredDevice(
+               device,
+               id: freeID
+           ) {
+            pendingFreeVerification = (
+                freeDeviceID: freeID,
+                candidateDeviceID: device.id
+            )
         }
 
         connectTask?.cancel()
@@ -1770,6 +1786,127 @@ final class AppModel {
         }
 
         return true
+    }
+
+    private func finalizeResolvedDevice(
+        originalDeviceID: String,
+        resolvedDevice: TVDevice,
+        adapter: TVControlling
+    ) async -> Bool {
+        guard let pending =
+                pendingFreeVerification,
+              pending.candidateDeviceID ==
+                originalDeviceID else {
+            deviceStore.reconcile(
+                oldDeviceID: originalDeviceID,
+                with: resolvedDevice
+            )
+            favorites.migrate(
+                from: originalDeviceID,
+                to: resolvedDevice.id
+            )
+            return true
+        }
+
+        pendingFreeVerification = nil
+
+        let isFreeTV =
+            resolvedDevice.id ==
+                pending.freeDeviceID ||
+            deviceStore.matchesStoredDevice(
+                resolvedDevice,
+                id: pending.freeDeviceID
+            )
+
+        if isFreeTV {
+            deviceStore.discardTransientDevice(
+                id: originalDeviceID
+            )
+            deviceStore.reconcile(
+                oldDeviceID:
+                    pending.freeDeviceID,
+                with: resolvedDevice
+            )
+            favorites.migrate(
+                from: pending.freeDeviceID,
+                to: resolvedDevice.id
+            )
+
+            if let accepted =
+                deviceStore.devices.first(
+                    where: {
+                        $0.id ==
+                            resolvedDevice.id
+                    }
+                ) {
+                deviceStore.select(accepted)
+            }
+
+            UserDefaults.standard.set(
+                resolvedDevice.id,
+                forKey:
+                    AppSettings.Keys.freeDeviceID
+            )
+            return true
+        }
+
+        deviceStore.discardTransientDevice(
+            id: originalDeviceID
+        )
+        PairingCredentialStore.remove(
+            platform: resolvedDevice.platform,
+            deviceID: originalDeviceID
+        )
+        PairingCredentialStore.remove(
+            platform: resolvedDevice.platform,
+            deviceID: resolvedDevice.id
+        )
+        await adapter.disconnect()
+
+        if let freeDevice =
+            deviceStore.devices.first(
+                where: {
+                    $0.id ==
+                        pending.freeDeviceID
+                }
+            ) {
+            deviceStore.select(freeDevice)
+        }
+
+        pairingRequirement = .none
+        connectionState = .connecting
+        currentCapabilities =
+            currentDevice?.capabilities ?? []
+        lastControlError = nil
+        proGateRequested = true
+        refreshSelection()
+        return false
+    }
+
+    private func abandonPendingFreeVerification() {
+        guard let pending =
+                pendingFreeVerification else {
+            return
+        }
+
+        pendingFreeVerification = nil
+        deviceStore.discardTransientDevice(
+            id: pending.candidateDeviceID
+        )
+
+        if let freeDevice =
+            deviceStore.devices.first(
+                where: {
+                    $0.id ==
+                        pending.freeDeviceID
+                }
+            ) {
+            deviceStore.select(freeDevice)
+        }
+    }
+
+    func dismissProGate() {
+        proGateRequested = false
     }
 
     func canAddOrUse(_ device: TVDevice) -> Bool {
@@ -1859,14 +1996,14 @@ final class AppModel {
                 }
 
                 let resolvedDevice = adapter.device
-                self.deviceStore.reconcile(
-                    oldDeviceID: deviceID,
-                    with: resolvedDevice
-                )
-                self.favorites.migrate(
-                    from: deviceID,
-                    to: resolvedDevice.id
-                )
+
+                guard await self.finalizeResolvedDevice(
+                    originalDeviceID: deviceID,
+                    resolvedDevice: resolvedDevice,
+                    adapter: adapter
+                ) else {
+                    return
+                }
 
                 self.connectionState = connection.state
                 self.currentCapabilities = connection.capabilities
@@ -1889,6 +2026,7 @@ final class AppModel {
                     return
                 }
 
+                self.abandonPendingFreeVerification()
                 self.connectionState = .unavailable
                 self.currentCapabilities = []
                 self.pairingRequirement = .none
@@ -1913,7 +2051,41 @@ final class AppModel {
             connectionState == .connecting ||
             connectionState == .unavailable
 
+        let returningFromBackground =
+            wasBackgrounded
         wasBackgrounded = false
+
+        if requiresPairing,
+           returningFromBackground,
+           let adapter {
+            Task { @MainActor [weak self, adapter] in
+                do {
+                    let requirement =
+                        try await adapter
+                            .pairingRequirement()
+
+                    guard let self,
+                          self.adapter === adapter else {
+                        return
+                    }
+
+                    self.pairingRequirement =
+                        requirement
+                    self.connectionState =
+                        .connecting
+                    self.lastControlError = nil
+                } catch {
+                    guard let self,
+                          self.adapter === adapter else {
+                        return
+                    }
+
+                    self.lastControlError =
+                        error.localizedDescription
+                }
+            }
+            return
+        }
 
         if !requiresPairing,
            shouldReconnect {
@@ -1958,14 +2130,18 @@ final class AppModel {
             try await adapter.pair(using: response)
 
             let resolvedDevice = adapter.device
-            deviceStore.reconcile(
-                oldDeviceID: currentDevice.id,
-                with: resolvedDevice
-            )
-            favorites.migrate(
-                from: currentDevice.id,
-                to: resolvedDevice.id
-            )
+
+            let accepted =
+                await finalizeResolvedDevice(
+                    originalDeviceID:
+                        currentDevice.id,
+                    resolvedDevice: resolvedDevice,
+                    adapter: adapter
+                )
+
+            if !accepted {
+                return true
+            }
 
             pairingRequirement = .none
             currentCapabilities = resolvedDevice.capabilities
@@ -1988,6 +2164,7 @@ final class AppModel {
 
         let activeAdapter = adapter
 
+        abandonPendingFreeVerification()
         pairingRequirement = .none
         connectionState = .unavailable
         lastControlError = "Pairing canceled. Reconnect when you’re ready."

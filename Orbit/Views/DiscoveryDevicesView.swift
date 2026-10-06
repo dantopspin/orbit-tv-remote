@@ -110,7 +110,7 @@ struct DiscoveryView: View {
                             if appModel.discovery.isSearching {
                                 HStack(spacing: 10) {
                                     ProgressView()
-                                    Text("Connecting… Check your TV if asked.")
+                                    Text("Identifying TV…")
                                         .foregroundStyle(.secondary)
                                 }
                             }
