@@ -499,10 +499,14 @@ final class DiscoveryService {
     private func device(from response: SSDPResponse) -> TVDevice? {
         guard let host = response.location.host else { return nil }
 
+        let discoveryIdentity =
+            response.canonicalUSN ??
+            host.lowercased()
+
         switch response.platformHint {
         case .roku:
             return TVDevice(
-                id: "roku-\(response.usn ?? host)",
+                id: "roku-\(discoveryIdentity)",
                 name: "Roku",
                 platform: .roku,
                 host: host,
@@ -518,7 +522,7 @@ final class DiscoveryService {
 
         case .samsung:
             return TVDevice(
-                id: "samsung-\(response.usn ?? host)",
+                id: "samsung-\(discoveryIdentity)",
                 name: "Samsung TV",
                 platform: .samsung,
                 host: host,
@@ -538,7 +542,7 @@ final class DiscoveryService {
 
         case .lgWebOS:
             return TVDevice(
-                id: "lg-\(response.usn ?? host)",
+                id: "lg-\(discoveryIdentity)",
                 name: "LG TV",
                 platform: .lgWebOS,
                 host: host,
@@ -559,7 +563,7 @@ final class DiscoveryService {
 
         case .fireTV:
             return TVDevice(
-                id: "firetv-\(response.usn ?? host)",
+                id: "firetv-\(discoveryIdentity)",
                 name: "Fire TV",
                 platform: .fireTV,
                 host: host,

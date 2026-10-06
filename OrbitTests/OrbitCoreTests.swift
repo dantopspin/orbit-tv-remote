@@ -38,6 +38,13 @@ final class SSDPResponseTests: XCTestCase {
             response.deduplicationKey,
             "uuid:roku:ecp:abc123"
         )
+
+        let discoveredID =
+            "roku-\(response.canonicalUSN ?? "fallback")"
+        XCTAssertEqual(
+            discoveredID,
+            "roku-uuid:roku:ecp:abc123"
+        )
     }
 
     func testRejectsResponseWithoutLocation() {

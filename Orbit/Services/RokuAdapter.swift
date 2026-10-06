@@ -105,7 +105,20 @@ final class RokuAdapter: NSObject, TVControlling {
     }
 
     private func resolvedDevice(from info: RokuDeviceInfo) -> TVDevice {
-        let stableID = info.serialNumber ?? info.deviceID ?? device.id
+        let stableID = info.serialNumber ?? info.deviceID
+        let manualID = "roku-\(device.host)"
+
+        let resolvedID: String
+        if device.id == manualID,
+           let stableID,
+           !stableID.isEmpty {
+            resolvedID = "roku-\(stableID.lowercased())"
+        } else {
+            // SSDP USNs are stable across DHCP changes. Preserve a
+            // discovery-derived ID instead of replacing it with another
+            // hardware identifier and creating a duplicate on the next scan.
+            resolvedID = device.id
+        }
 
         var capabilities: Set<TVCapability> = [
             .directionalNavigation,
@@ -126,7 +139,7 @@ final class RokuAdapter: NSObject, TVControlling {
         }
 
         return TVDevice(
-            id: "roku-\(stableID)",
+            id: resolvedID,
             name: info.bestName ?? (info.isTV ? "Roku TV" : "Roku"),
             platform: .roku,
             host: device.host,

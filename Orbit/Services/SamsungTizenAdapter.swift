@@ -246,10 +246,21 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
     private func resolvedDevice(
         from metadata: SamsungTVMetadata
     ) -> TVDevice {
-        let stableID = metadata.stableID ?? device.id
+        let manualID = "samsung-\(device.host)"
+        let resolvedID: String
+
+        if device.id == manualID,
+           let stableID = metadata.stableID,
+           !stableID.isEmpty {
+            resolvedID =
+                "samsung-\(stableID.lowercased())"
+        } else {
+            // Keep an SSDP-derived identity stable across address changes.
+            resolvedID = device.id
+        }
 
         return TVDevice(
-            id: "samsung-\(stableID)",
+            id: resolvedID,
             name: metadata.name ?? "Samsung TV",
             platform: .samsung,
             host: device.host,

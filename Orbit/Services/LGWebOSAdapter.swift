@@ -55,6 +55,8 @@ final class LGWebOSAdapter: NSObject, TVControlling {
             )
         }
 
+        await resolveManualIdentityIfAvailable()
+
         let capabilities: Set<TVCapability> = [
             .directionalNavigation,
             .touchpad,
@@ -355,6 +357,60 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         )
         pointerTask = task
         task.resume()
+    }
+
+    private func resolveManualIdentityIfAvailable() async {
+        let provisionalID = "lg-\(device.host)"
+
+        guard device.id == provisionalID else {
+            return
+        }
+
+        guard let payload = try? await request(
+            uri:
+                "ssap://com.webos.service.update/getCurrentSWInformation"
+        ),
+        let rawDeviceID = payload["device_id"] as? String else {
+            return
+        }
+
+        let normalized = rawDeviceID
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            .lowercased()
+
+        guard !normalized.isEmpty else {
+            return
+        }
+
+        let oldID = device.id
+        let newID = "lg-\(normalized)"
+
+        if let modelName = payload["model_name"] as? String,
+           device.name == "LG TV",
+           !modelName.isEmpty {
+            device.name = "LG \(modelName)"
+        }
+
+        device.id = newID
+
+        if oldID != newID,
+           let credential = try? PairingCredentialStore.load(
+               LGCredential.self,
+               platform: .lgWebOS,
+               deviceID: oldID
+           ) {
+            try? PairingCredentialStore.save(
+                credential,
+                platform: .lgWebOS,
+                deviceID: newID
+            )
+            PairingCredentialStore.remove(
+                platform: .lgWebOS,
+                deviceID: oldID
+            )
+        }
     }
 
     private func request(
