@@ -238,8 +238,9 @@ final class AndroidTVAdapter: TVControlling {
                 pairingManager = nil
             }
 
-            if case .permissionDenied =
-                (error as? TVControlError),
+            if let controlError =
+                    error as? TVControlError,
+               case .permissionDenied = controlError,
                (try? await pairingRequirement()) != nil {
                 throw TVControlError.permissionDenied(
                     "That code was not accepted. A new code is shown on your TV — enter the new code to try again."
