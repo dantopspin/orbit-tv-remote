@@ -425,7 +425,7 @@ struct DevicesView: View {
                 }
             }
             .sheet(isPresented: $showAddTV) {
-                DiscoveryView()
+                DiscoveryView(showsCloseButton: true)
             }
             .sheet(isPresented: $showPremium) {
                 PremiumView()
