@@ -6,6 +6,7 @@ import Security
 struct AppSettings {
     enum Keys {
         static let onboardingCompleted = "orbit.onboardingCompleted"
+        static let tvSetupDeferred = "orbit.tvSetupDeferred"
         static let darkMode = "orbit.darkMode"
         static let hapticsEnabled = "orbit.hapticsEnabled"
         static let keepScreenAwake = "orbit.keepScreenAwake"

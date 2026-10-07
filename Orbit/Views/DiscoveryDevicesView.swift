@@ -4,6 +4,7 @@ import UIKit
 struct DiscoveryView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppSettings.Keys.tvSetupDeferred) private var tvSetupDeferred = true
     @State private var showManualAddress = false
     @State private var showPro = false
     @State private var manualAddress = ""
@@ -88,11 +89,23 @@ struct DiscoveryView: View {
 
                 Spacer()
 
-                Button("Can’t find your TV?") {
-                    showManualAddress = true
+                VStack(spacing: 6) {
+                    Button("Can’t find your TV?") {
+                        showManualAddress = true
+                    }
+                    .foregroundStyle(.primary)
+                    .font(.subheadline.weight(.semibold))
+
+                    if appModel.currentDevice == nil {
+                        Button("Set Up Later") {
+                            tvSetupDeferred = true
+                            dismiss()
+                        }
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(minHeight: 44)
+                    }
                 }
-                .foregroundStyle(.primary)
-                .font(.subheadline.weight(.semibold))
                 .padding(.bottom, 16)
             }
             .background(Color.orbitBackground)
