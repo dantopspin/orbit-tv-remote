@@ -19,6 +19,10 @@ struct SettingsView: View {
                     Toggle("Haptic Feedback", isOn: $hapticsEnabled)
                     Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
                     Toggle("Dark Mode", isOn: $darkMode)
+                } footer: {
+                    Text(
+                        "When Dark Mode is off, Orbit follows your iPhone appearance."
+                    )
                 }
 
                 Section("Remote") {
