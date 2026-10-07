@@ -1,0 +1,133 @@
+name: iOS Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate app icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import struct
+          import zlib
+
+          path = "Orbit/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+          data = open(path, "rb").read()
+          assert data.startswith(b"\x89PNG\r\n\x1a\n")
+
+          offset = 8
+          idat = bytearray()
+          saw_iend = False
+          width = height = bit_depth = color_type = None
+
+          while offset < len(data):
+              if offset + 12 > len(data):
+                  raise AssertionError("truncated PNG chunk header")
+
+              length = struct.unpack(">I", data[offset:offset + 4])[0]
+              kind = data[offset + 4:offset + 8]
+              payload_start = offset + 8
+              payload_end = payload_start + length
+              crc_end = payload_end + 4
+
+              if crc_end > len(data):
+                  raise AssertionError(f"truncated {kind!r} chunk")
+
+              payload = data[payload_start:payload_end]
+              expected_crc = struct.unpack(
+                  ">I",
+                  data[payload_end:crc_end]
+              )[0]
+              actual_crc = zlib.crc32(kind + payload) & 0xFFFFFFFF
+              assert actual_crc == expected_crc, f"bad CRC for {kind!r}"
+
+              if kind == b"IHDR":
+                  (
+                      width,
+                      height,
+                      bit_depth,
+                      color_type,
+                      compression,
+                      filter_method,
+                      interlace
+                  ) = struct.unpack(">IIBBBBB", payload)
+
+                  assert width == 1024
+                  assert height == 1024
+                  assert bit_depth == 8
+                  assert color_type == 2, "app icon must be truecolor RGB without alpha"
+                  assert compression == 0
+                  assert filter_method == 0
+                  assert interlace in (0, 1)
+
+              elif kind == b"IDAT":
+                  idat.extend(payload)
+
+              elif kind == b"IEND":
+                  saw_iend = True
+                  break
+
+              offset = crc_end
+
+          assert saw_iend, "missing IEND"
+          assert idat, "missing IDAT"
+          zlib.decompress(bytes(idat))
+          assert width == 1024 and height == 1024
+
+          print(
+              f"Validated RGB PNG: {width}x{height}, "
+              f"{len(data)} bytes"
+          )
+          PY
+
+      - name: Select available iPhone simulator
+        shell: bash
+        run: |
+          SIMULATOR_ID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')"
+          if [ -z "$SIMULATOR_ID" ]; then
+            echo "No available iPhone simulator found" >&2
+            exit 1
+          fi
+          echo "SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
+          echo "Using simulator $SIMULATOR_ID"
+
+      - name: Build Orbit for testing
+        run: >
+          xcodebuild
+          -project Orbit.xcodeproj
+          -scheme Orbit
+          -configuration Debug
+          -destination "platform=iOS Simulator,id=$SIMULATOR_ID"
+          CODE_SIGNING_ALLOWED=NO
+          build-for-testing
+
+      - name: Run Orbit unit tests
+        run: >
+          xcodebuild
+          -project Orbit.xcodeproj
+          -scheme Orbit
+          -configuration Debug
+          -destination "platform=iOS Simulator,id=$SIMULATOR_ID"
+          CODE_SIGNING_ALLOWED=NO
+          test-without-building
+
+      - name: Build Orbit Release
+        run: >
+          xcodebuild
+          -project Orbit.xcodeproj
+          -scheme Orbit
+          -configuration Release
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build

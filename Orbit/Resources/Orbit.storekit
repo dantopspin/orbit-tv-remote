@@ -1,0 +1,67 @@
+{
+  "identifier": "7B5B1F4C-2C77-4B71-8B31-4EC34B3B2A01",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {},
+  "subscriptionGroups": [
+    {
+      "id": "A4B0C4D5-21D1-42A7-8B68-A11342A0A201",
+      "localizations": [
+        {
+          "description": "Orbit Pro subscriptions",
+          "displayName": "Orbit Pro",
+          "locale": "en_US"
+        }
+      ],
+      "name": "Orbit Pro",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "3.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "D0E0C0B0-A090-4870-8600-010203040501",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Orbit Pro billed weekly.",
+              "displayName": "Orbit Pro Weekly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "orbit.weekly",
+          "recurringSubscriptionPeriod": "P1W",
+          "referenceName": "Orbit Pro Weekly",
+          "subscriptionGroupID": "A4B0C4D5-21D1-42A7-8B68-A11342A0A201",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "7.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "D0E0C0B0-A090-4870-8600-010203040502",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Orbit Pro billed monthly.",
+              "displayName": "Orbit Pro Monthly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "orbit.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Orbit Pro Monthly",
+          "subscriptionGroupID": "A4B0C4D5-21D1-42A7-8B68-A11342A0A201",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

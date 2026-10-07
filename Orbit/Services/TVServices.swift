@@ -1,0 +1,2671 @@
+import Foundation
+import SwiftUI
+import StoreKit
+import UIKit
+import Observation
+
+@MainActor
+@Observable
+final class DeviceStore {
+    private(set) var devices: [TVDevice] = []
+    var selectedDeviceID: String?
+
+    init() { load() }
+
+    var selectedDevice: TVDevice? {
+        devices.first { $0.id == selectedDeviceID }
+    }
+
+    var availableDevices: [TVDevice] {
+        devices.filter {
+            TVPlatformAvailability.isEnabled(
+                $0.platform
+            )
+        }
+    }
+
+    func ensureAvailableSelection() {
+        if let selectedDevice,
+           TVPlatformAvailability.isEnabled(
+               selectedDevice.platform
+           ) {
+            return
+        }
+
+        selectedDeviceID =
+            availableDevices.first?.id
+        persist()
+    }
+
+    @discardableResult
+    func addOrUpdate(_ device: TVDevice) -> TVDevice {
+        if let index = matchingIndex(for: device) {
+            let previous = devices[index]
+            let merged = merge(
+                previous,
+                with: device
+            )
+            devices[index] = merged
+            selectedDeviceID = merged.id
+            persist()
+            return merged
+        }
+
+        devices.append(device)
+        selectedDeviceID = device.id
+        persist()
+        return device
+    }
+
+    func select(_ device: TVDevice) {
+        selectedDeviceID = device.id
+        persist()
+    }
+
+    func updateCapabilities(for deviceID: String, capabilities: Set<TVCapability>) {
+        guard let index = devices.firstIndex(where: { $0.id == deviceID }) else { return }
+        guard devices[index].capabilities != capabilities else { return }
+
+        devices[index].capabilities = capabilities
+        persist()
+    }
+
+    func rename(_ device: TVDevice, to name: String) {
+        guard let index = devices.firstIndex(where: { $0.id == device.id }) else { return }
+        devices[index].name = name
+        persist()
+    }
+
+    func setRoomName(
+        for deviceID: String,
+        to roomName: String?
+    ) {
+        guard let index = devices.firstIndex(
+            where: { $0.id == deviceID }
+        ) else {
+            return
+        }
+
+        let trimmed = roomName?
+            .trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+
+        devices[index].roomName =
+            (trimmed?.isEmpty == false)
+            ? trimmed
+            : nil
+        persist()
+    }
+
+    func matchesStoredDevice(
+        _ incoming: TVDevice,
+        id storedID: String
+    ) -> Bool {
+        guard let saved = devices.first(
+            where: { $0.id == storedID }
+        ),
+        saved.platform == incoming.platform else {
+            return false
+        }
+
+        if saved.id == incoming.id {
+            return true
+        }
+
+        let savedAliases =
+            Self.trustedIdentitySet(
+                for: saved
+            )
+        let incomingAliases =
+            Self.trustedIdentitySet(
+                for: incoming
+            )
+
+        return !savedAliases.isEmpty &&
+            !incomingAliases.isEmpty &&
+            !savedAliases.isDisjoint(
+                with: incomingAliases
+            )
+    }
+
+    func reconcile(oldDeviceID: String, with resolvedDevice: TVDevice) {
+        guard let oldIndex = devices.firstIndex(
+            where: { $0.id == oldDeviceID }
+        ) else {
+            addOrUpdate(resolvedDevice)
+            return
+        }
+
+        let previous = devices[oldIndex]
+
+        // If this resolution points at a TV we already know, merge into
+        // that canonical record. Never replace a saved Pro record with a
+        // transient discovery/manual candidate, because that would lose
+        // the user's custom name and room label.
+        if oldDeviceID != resolvedDevice.id,
+           let canonicalIndex = devices.firstIndex(
+               where: { $0.id == resolvedDevice.id }
+           ) {
+            var merged = merge(
+                devices[canonicalIndex],
+                with: resolvedDevice
+            )
+
+            merged.formDiscoveryAliases(
+                previous.discoveryAliases.filter {
+                    Self.isTrustedIdentity(
+                        $0,
+                        platform: previous.platform
+                    )
+                }
+            )
+
+            if Self.isTrustedIdentity(
+                oldDeviceID,
+                platform: previous.platform
+            ) {
+                merged.formDiscoveryAliases(
+                    [oldDeviceID]
+                )
+            }
+
+            devices[canonicalIndex] = merged
+            devices.removeAll {
+                $0.id == oldDeviceID &&
+                $0.id != merged.id
+            }
+
+            if selectedDeviceID == oldDeviceID {
+                selectedDeviceID = merged.id
+            }
+
+            if UserDefaults.standard.string(
+                forKey: AppSettings.Keys.freeDeviceID
+            ) == oldDeviceID {
+                UserDefaults.standard.set(
+                    merged.id,
+                    forKey: AppSettings.Keys.freeDeviceID
+                )
+            }
+
+            persist()
+            return
+        }
+
+        let genericNames: Set<String> = [
+            "Roku",
+            "Roku TV",
+            "Samsung TV",
+            "LG TV",
+            "Android TV",
+            "Fire TV",
+            "Smart TV",
+            previous.platform.displayName
+        ]
+
+        var merged = resolvedDevice
+        merged.roomName = previous.roomName
+        merged.formDiscoveryAliases(
+            previous.discoveryAliases.filter {
+                Self.isTrustedIdentity(
+                    $0,
+                    platform: previous.platform
+                )
+            }
+        )
+
+        if oldDeviceID != resolvedDevice.id,
+           Self.isTrustedIdentity(
+               oldDeviceID,
+               platform: previous.platform
+           ) {
+            merged.formDiscoveryAliases(
+                [oldDeviceID]
+            )
+        }
+
+        if !genericNames.contains(previous.name) {
+            merged.name = previous.name
+        }
+
+        devices[oldIndex] = merged
+
+        if selectedDeviceID == oldDeviceID {
+            selectedDeviceID = merged.id
+        }
+
+        if UserDefaults.standard.string(
+            forKey: AppSettings.Keys.freeDeviceID
+        ) == oldDeviceID {
+            UserDefaults.standard.set(
+                merged.id,
+                forKey: AppSettings.Keys.freeDeviceID
+            )
+        }
+
+        persist()
+    }
+
+    @discardableResult
+    func refreshKnownDevices(
+        from discoveredDevices: [TVDevice]
+    ) -> Set<String> {
+        var endpointChanges: Set<String> = []
+        var didChange = false
+
+        for discovered in discoveredDevices {
+            guard let index = matchingIndex(
+                for: discovered
+            ) else {
+                continue
+            }
+
+            let previous = devices[index]
+            let merged = merge(
+                previous,
+                with: discovered
+            )
+
+            if previous.host != merged.host ||
+                effectivePort(
+                    for: previous
+                ) != effectivePort(
+                    for: merged
+                ) {
+                endpointChanges.insert(previous.id)
+            }
+
+            if previous != merged {
+                devices[index] = merged
+                didChange = true
+            }
+        }
+
+        if didChange {
+            persist()
+        }
+
+        return endpointChanges
+    }
+
+    private func matchingIndex(
+        for incoming: TVDevice
+    ) -> Int? {
+        if let exact = devices.firstIndex(
+            where: { $0.id == incoming.id }
+        ) {
+            return exact
+        }
+
+        let incomingAliases =
+            Self.trustedIdentitySet(
+                for: incoming
+            )
+
+        guard !incomingAliases.isEmpty else {
+            return nil
+        }
+
+        return devices.firstIndex { saved in
+            guard saved.platform ==
+                    incoming.platform else {
+                return false
+            }
+
+            let savedAliases =
+                Self.trustedIdentitySet(
+                    for: saved
+                )
+
+            return !savedAliases.isEmpty &&
+                !savedAliases.isDisjoint(
+                    with: incomingAliases
+                )
+        }
+    }
+
+    private func merge(
+        _ previous: TVDevice,
+        with incoming: TVDevice
+    ) -> TVDevice {
+        var merged = previous
+        merged.host = incoming.host
+        merged.port = incoming.port ?? previous.port
+
+        merged.discoveryIDs =
+            previous.discoveryAliases
+                .union(
+                    incoming.discoveryAliases
+                )
+                .filter {
+                    Self.isTrustedIdentity(
+                        $0,
+                        platform: previous.platform
+                    )
+                }
+
+        if previous.id != incoming.id,
+           Self.isTrustedIdentity(
+               incoming.id,
+               platform: incoming.platform
+           ) {
+            merged.formDiscoveryAliases(
+                [incoming.id]
+            )
+        }
+
+        let genericNames: Set<String> = [
+            "Smart TV",
+            "Roku",
+            "Roku TV",
+            "Samsung TV",
+            "LG TV",
+            "Android TV",
+            "Fire TV",
+            previous.platform.displayName
+        ]
+
+        if genericNames.contains(previous.name),
+           !incoming.name.isEmpty {
+            merged.name = incoming.name
+        }
+
+        if merged.capabilities.isEmpty,
+           !incoming.capabilities.isEmpty {
+            merged.capabilities = incoming.capabilities
+        }
+
+        return merged
+    }
+
+    private func effectivePort(
+        for device: TVDevice
+    ) -> Int? {
+        device.port ??
+            Self.defaultPort(
+                for: device.platform
+            )
+    }
+
+    private static func defaultPort(
+        for platform: TVPlatform
+    ) -> Int? {
+        switch platform {
+        case .roku:
+            return 8060
+        case .samsung:
+            return 8002
+        case .lgWebOS:
+            return 3001
+        case .androidTV:
+            return 6466
+        case .fireTV:
+            return 8080
+        default:
+            return nil
+        }
+    }
+
+    private static func trustedIdentitySet(
+        for device: TVDevice
+    ) -> Set<String> {
+        device.discoveryAliases
+            .union([device.id])
+            .filter {
+                isTrustedIdentity(
+                    $0,
+                    platform: device.platform
+                )
+            }
+    }
+
+    private static func isTrustedIdentity(
+        _ id: String,
+        platform: TVPlatform
+    ) -> Bool {
+        let lowered = id.lowercased()
+
+        if platform == .androidTV {
+            guard lowered.hasPrefix("androidtv-") else {
+                return false
+            }
+
+            let suffix = lowered.dropFirst(
+                "androidtv-".count
+            )
+
+            return suffix.count == 32 &&
+                suffix.allSatisfy {
+                    $0.isNumber ||
+                    ("a"..."f").contains(
+                        String($0)
+                    )
+                }
+        }
+
+        let prefixes: [TVPlatform: String] = [
+            .roku: "roku-",
+            .samsung: "samsung-",
+            .lgWebOS: "lg-",
+            .fireTV: "firetv-"
+        ]
+
+        guard let prefix = prefixes[platform],
+              lowered.hasPrefix(prefix) else {
+            return true
+        }
+
+        let suffix = String(
+            lowered.dropFirst(prefix.count)
+        )
+        let octets = suffix
+            .split(separator: ".")
+            .compactMap { Int($0) }
+
+        let isIPv4 =
+            octets.count == 4 &&
+            octets.allSatisfy {
+                (0...255).contains($0)
+            }
+
+        return !isIPv4
+    }
+
+    func discardTransientDevice(
+        id: String
+    ) {
+        devices.removeAll { $0.id == id }
+
+        if selectedDeviceID == id {
+            selectedDeviceID = nil
+        }
+
+        persist()
+    }
+
+    private static func isProvisionalIdentity(
+        _ id: String,
+        platform: TVPlatform,
+        host: String
+    ) -> Bool {
+        let prefix: String
+
+        switch platform {
+        case .roku:
+            prefix = "roku"
+        case .samsung:
+            prefix = "samsung"
+        case .lgWebOS:
+            prefix = "lg"
+        case .androidTV:
+            prefix = "androidtv"
+        case .fireTV:
+            prefix = "firetv"
+        default:
+            return false
+        }
+
+        return id.lowercased() ==
+            "\(prefix)-\(host.lowercased())"
+    }
+
+    func remove(_ device: TVDevice) {
+        let wasFreeDevice =
+            UserDefaults.standard.string(
+                forKey: AppSettings.Keys.freeDeviceID
+            ) == device.id
+
+        devices.removeAll {
+            $0.id == device.id
+        }
+
+        if selectedDeviceID == device.id {
+            selectedDeviceID = devices.first?.id
+        }
+
+        if wasFreeDevice {
+            if let selectedDeviceID {
+                UserDefaults.standard.set(
+                    selectedDeviceID,
+                    forKey: AppSettings.Keys.freeDeviceID
+                )
+            } else {
+                UserDefaults.standard.removeObject(
+                    forKey: AppSettings.Keys.freeDeviceID
+                )
+            }
+        }
+
+        PairingCredentialStore.remove(
+            platform: device.platform,
+            deviceID: device.id
+        )
+        persist()
+    }
+
+    private func load() {
+        selectedDeviceID = UserDefaults.standard.string(forKey: AppSettings.Keys.selectedDeviceID)
+        guard let data = UserDefaults.standard.data(forKey: AppSettings.Keys.savedDevices),
+              let decoded = try? JSONDecoder().decode([TVDevice].self, from: data) else { return }
+
+        devices = decoded
+
+        if selectedDevice == nil {
+            selectedDeviceID = devices.first?.id
+        }
+    }
+
+    private func persist() {
+        if let data = try? JSONEncoder().encode(devices) {
+            UserDefaults.standard.set(data, forKey: AppSettings.Keys.savedDevices)
+        }
+        UserDefaults.standard.set(selectedDeviceID, forKey: AppSettings.Keys.selectedDeviceID)
+    }
+}
+
+@MainActor
+final class TVAdapterEventEmitter {
+    private var generation = 0
+    private var continuation:
+        AsyncStream<TVAdapterEvent>.Continuation?
+
+    var stream: AsyncStream<TVAdapterEvent> {
+        generation += 1
+        let currentGeneration = generation
+
+        continuation?.finish()
+
+        let pair = AsyncStream<TVAdapterEvent>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        continuation = pair.continuation
+
+        pair.continuation.onTermination = {
+            [weak self] _ in
+
+            Task { @MainActor in
+                guard let self,
+                      self.generation == currentGeneration else {
+                    return
+                }
+
+                self.continuation = nil
+            }
+        }
+
+        return pair.stream
+    }
+
+    func yield(_ event: TVAdapterEvent) {
+        continuation?.yield(event)
+    }
+
+    func finish() {
+        generation += 1
+        continuation?.finish()
+        continuation = nil
+    }
+}
+
+@MainActor
+protocol TVControlling: AnyObject {
+    var device: TVDevice { get }
+    var events: AsyncStream<TVAdapterEvent> { get }
+
+    func connect() async throws -> TVConnectionInfo
+    func disconnect() async
+
+    func pairingRequirement() async throws -> TVPairingRequirement
+    func pair(using response: TVPairingResponse) async throws
+
+    func send(_ command: RemoteCommand) async throws
+    func beginPress(_ command: RemoteCommand) async throws
+    func endPress(_ command: RemoteCommand) async throws
+    func send(text: String) async throws
+
+    func apps() async throws -> [TVApp]
+    func inputs() async throws -> [TVInput]
+    func launch(app: TVApp) async throws
+    func select(input: TVInput) async throws
+}
+
+extension TVControlling {
+    var events: AsyncStream<TVAdapterEvent> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func disconnect() async {}
+
+    func pairingRequirement() async throws -> TVPairingRequirement {
+        .none
+    }
+
+    func pair(using response: TVPairingResponse) async throws {
+        guard case .none = try await pairingRequirement() else {
+            throw TVControlError.unsupported
+        }
+    }
+
+    func beginPress(_ command: RemoteCommand) async throws {
+        try await send(command)
+    }
+
+    func endPress(_ command: RemoteCommand) async throws {}
+}
+
+enum TVControlError: LocalizedError {
+    case unsupported
+    case unreachable
+    case transport(String)
+    case permissionDenied(String)
+    case rejected(status: Int?, message: String?)
+    case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupported:
+            return "This control is not supported by the connected TV."
+        case .unreachable:
+            return "The TV could not be reached on your local network."
+        case .transport(let message):
+            return message
+        case .permissionDenied(let message):
+            return message
+        case .rejected(_, let message):
+            return message ?? "The TV rejected that command."
+        case .invalidResponse:
+            return "The TV returned an unexpected response."
+        }
+    }
+
+    var affectsConnectionState: Bool {
+        switch self {
+        case .unreachable, .transport:
+            return true
+        case .unsupported, .permissionDenied, .rejected, .invalidResponse:
+            return false
+        }
+    }
+}
+
+enum TVPlatformAvailability {
+    static func isEnabled(_ platform: TVPlatform) -> Bool {
+        switch platform {
+        case .roku, .fireTV:
+            #if DEBUG
+            return true
+            #else
+            return false
+            #endif
+
+        default:
+            return true
+        }
+    }
+}
+
+@MainActor
+enum TVAdapterFactory {
+    static func makeAdapter(for device: TVDevice) -> TVControlling {
+        guard TVPlatformAvailability.isEnabled(device.platform) else {
+            return UnsupportedTVAdapter(device: device)
+        }
+
+        switch device.platform {
+        case .roku:
+            #if DEBUG
+            return RokuAdapter(device: device)
+            #else
+            return UnsupportedTVAdapter(device: device)
+            #endif
+        case .samsung:
+            return SamsungTizenAdapter(device: device)
+        case .lgWebOS:
+            return LGWebOSAdapter(device: device)
+        case .androidTV:
+            return AndroidTVAdapter(device: device)
+        case .fireTV:
+            #if DEBUG
+            return FireTVAdapter(device: device)
+            #else
+            return UnsupportedTVAdapter(device: device)
+            #endif
+        default:
+            return UnsupportedTVAdapter(device: device)
+        }
+    }
+}
+
+final class UnsupportedTVAdapter: TVControlling {
+    let device: TVDevice
+
+    init(device: TVDevice) { self.device = device }
+
+    func connect() async throws -> TVConnectionInfo { throw TVControlError.unsupported }
+    func send(_ command: RemoteCommand) async throws { throw TVControlError.unsupported }
+    func send(text: String) async throws { throw TVControlError.unsupported }
+    func apps() async throws -> [TVApp] { [] }
+    func inputs() async throws -> [TVInput] { [] }
+    func launch(app: TVApp) async throws { throw TVControlError.unsupported }
+    func select(input: TVInput) async throws { throw TVControlError.unsupported }
+}
+
+@MainActor
+@Observable
+final class DiscoveryService {
+    private(set) var devices: [TVDevice] = []
+    private(set) var isSearching = false
+    var lastError: String?
+
+    @ObservationIgnored private var scanTask: Task<Void, Never>?
+    @ObservationIgnored var onDevicesUpdated:
+        (([TVDevice]) -> Void)?
+
+    func startScan() {
+        scanTask?.cancel()
+
+        isSearching = true
+        lastError = nil
+        devices = []
+
+        scanTask = Task { [weak self] in
+            async let ssdpScan = SSDPScanner.scan(
+                timeout: 1.8
+            )
+            async let androidTVs = AndroidTVBonjourScanner.scan(
+                timeout: 1.8
+            )
+
+            let (ssdpResult, androidDevices) = await (
+                ssdpScan,
+                androidTVs
+            )
+            let responses = ssdpResult.responses
+
+            guard !Task.isCancelled, let self else { return }
+
+            var discovered: [String: TVDevice] = [:]
+            var ssdpGroups:
+                [String: [(TVDevice, SSDPResponse)]] = [:]
+
+            for response in responses {
+                guard let device = self.device(
+                    from: response
+                ),
+                TVPlatformAvailability.isEnabled(
+                    device.platform
+                ) else {
+                    continue
+                }
+
+                let key =
+                    "\(device.platform.rawValue)|" +
+                    device.host.lowercased()
+
+                ssdpGroups[key, default: []].append(
+                    (device, response)
+                )
+            }
+
+            for candidates in ssdpGroups.values {
+                guard var chosen =
+                        self.preferredSSDPDevice(
+                            from: candidates
+                        ) else {
+                    continue
+                }
+
+                let aliases = Set(
+                    candidates.map { $0.0.id }
+                ).subtracting(
+                    [chosen.id]
+                )
+
+                chosen.formDiscoveryAliases(
+                    aliases
+                )
+                discovered[chosen.id] = chosen
+            }
+
+            for device in androidDevices
+            where TVPlatformAvailability.isEnabled(device.platform) {
+                discovered[device.id] = device
+            }
+
+            self.devices = discovered.values.sorted {
+                $0.name.localizedCaseInsensitiveCompare(
+                    $1.name
+                ) == .orderedAscending
+            }
+
+            if self.devices.isEmpty,
+               !ssdpResult.multicastSendSucceeded {
+                self.lastError =
+                    "Orbit couldn’t start SSDP discovery on this build. You can still connect by local IP. If Local Network access was denied, enable it in Settings and scan again."
+            }
+
+            self.onDevicesUpdated?(self.devices)
+            self.isSearching = false
+        }
+    }
+
+    func stopScan() {
+        scanTask?.cancel()
+        scanTask = nil
+        isSearching = false
+    }
+
+    func addManualTV(host: String) async -> TVDevice? {
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard isValidLocalIPv4Address(trimmed) else {
+            lastError = "Enter a valid local IPv4 address, for example 192.168.1.24."
+            return nil
+        }
+
+        isSearching = true
+        lastError = nil
+        defer { isSearching = false }
+
+        let androidPairingReachable = await LocalTCPProbe.isReachable(
+            host: trimmed,
+            port: 6467
+        )
+        let androidRemoteReachable = androidPairingReachable
+            ? true
+            : await LocalTCPProbe.isReachable(
+                host: trimmed,
+                port: 6466
+            )
+
+        if androidPairingReachable || androidRemoteReachable {
+            var androidCandidate = TVDevice(
+                id: "androidtv-\(trimmed)",
+                name: "Android TV",
+                platform: .androidTV,
+                host: trimmed,
+                port: 6466,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .power,
+                    .volume,
+                    .mute,
+                    .inputSelection,
+                    .playback,
+                    .channels
+                ]
+            )
+
+            if let discoveredAlias = devices.first(
+                where: {
+                    $0.platform == .androidTV &&
+                    $0.host == trimmed &&
+                    $0.id != androidCandidate.id
+                }
+            )?.id {
+                androidCandidate.formDiscoveryAliases(
+                    [discoveredAlias]
+                )
+            }
+
+            devices.removeAll {
+                $0.id == androidCandidate.id
+            }
+            devices.append(androidCandidate)
+            return androidCandidate
+        }
+
+        #if DEBUG
+        if TVPlatformAvailability.isEnabled(.fireTV) {
+            let fireCandidate = TVDevice(
+                id: "firetv-\(trimmed)",
+                name: "Fire TV",
+                platform: .fireTV,
+                host: trimmed,
+                port: 8080,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .appLaunching,
+                    .playback
+                ]
+            )
+
+            let fireTV = FireTVAdapter(
+                device: fireCandidate
+            )
+
+            if await fireTV.probeWakeEndpoint() {
+                devices.removeAll {
+                    $0.id == fireCandidate.id
+                }
+                devices.append(fireCandidate)
+                return fireCandidate
+            }
+        }
+
+        #endif
+
+        async let samsungHTTP = LocalTCPProbe.isReachable(
+            host: trimmed,
+            port: 8001
+        )
+        async let samsungSecure = LocalTCPProbe.isReachable(
+            host: trimmed,
+            port: 8002
+        )
+        async let lgPlain = LocalTCPProbe.isReachable(
+            host: trimmed,
+            port: 3000
+        )
+        async let lgSecure = LocalTCPProbe.isReachable(
+            host: trimmed,
+            port: 3001
+        )
+
+        let (
+            samsungHTTPReachable,
+            samsungSecureReachable,
+            lgPlainReachable,
+            lgSecureReachable
+        ) = await (
+            samsungHTTP,
+            samsungSecure,
+            lgPlain,
+            lgSecure
+        )
+
+        if samsungHTTPReachable ||
+            samsungSecureReachable {
+            let samsungCandidate = TVDevice(
+                id: "samsung-\(trimmed)",
+                name: "Samsung TV",
+                platform: .samsung,
+                host: trimmed,
+                port: 8002
+            )
+
+            let samsung = SamsungTizenAdapter(
+                device: samsungCandidate
+            )
+
+            if var identified =
+                try? await samsung.identify() {
+                if let discoveredAlias = devices.first(
+                    where: {
+                        $0.platform == .samsung &&
+                        $0.host == trimmed &&
+                        $0.id != identified.id
+                    }
+                )?.id {
+                    identified.formDiscoveryAliases(
+                        [discoveredAlias]
+                    )
+                }
+
+                devices.removeAll {
+                    $0.id == identified.id
+                }
+                devices.append(identified)
+                return identified
+            }
+        }
+
+        if lgSecureReachable ||
+            lgPlainReachable {
+            let lgCandidate = TVDevice(
+                id: "lg-\(trimmed)",
+                name: "LG TV",
+                platform: .lgWebOS,
+                host: trimmed,
+                port: 3001,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .inputSelection,
+                    .appLaunching,
+                    .playback,
+                    .channels
+                ]
+            )
+
+            let lg = LGWebOSAdapter(
+                device: lgCandidate
+            )
+
+            if var identified =
+                try? await lg.identify() {
+                if let discoveredAlias =
+                    devices.first(
+                        where: {
+                            $0.platform == .lgWebOS &&
+                            $0.host == trimmed &&
+                            $0.id != identified.id
+                        }
+                    )?.id {
+                    identified.formDiscoveryAliases(
+                        [discoveredAlias]
+                    )
+                }
+
+                devices.removeAll {
+                    $0.id == identified.id
+                }
+                devices.append(identified)
+                return identified
+            }
+        }
+
+        #if DEBUG
+        if TVPlatformAvailability.isEnabled(.roku) {
+            let rokuCandidate = TVDevice(
+                id: "roku-\(trimmed)",
+                name: "Roku TV",
+                platform: .roku,
+                host: trimmed,
+                port: 8060
+            )
+
+            let roku = RokuAdapter(device: rokuCandidate)
+
+            do {
+                _ = try await roku.connect()
+                let connectedDevice = roku.device
+
+                devices.removeAll { $0.id == connectedDevice.id }
+                devices.append(connectedDevice)
+                return connectedDevice
+            } catch {
+                // Continue to the generic unsupported result below.
+            }
+        }
+
+        #endif
+
+        lastError = "Orbit couldn’t identify a supported TV at that address."
+        return nil
+    }
+
+    private func preferredSSDPDevice(
+        from candidates: [(TVDevice, SSDPResponse)]
+    ) -> TVDevice? {
+        candidates.sorted { lhs, rhs in
+            let leftRank = discoveryRank(
+                for: lhs.1,
+                platform: lhs.0.platform
+            )
+            let rightRank = discoveryRank(
+                for: rhs.1,
+                platform: rhs.0.platform
+            )
+
+            if leftRank != rightRank {
+                return leftRank < rightRank
+            }
+
+            return lhs.0.id < rhs.0.id
+        }
+        .first?
+        .0
+    }
+
+    private func discoveryRank(
+        for response: SSDPResponse,
+        platform: TVPlatform
+    ) -> Int {
+        let target =
+            response.searchTarget?
+                .lowercased() ?? ""
+
+        switch platform {
+        case .samsung:
+            return target.contains(
+                "remotecontrolreceiver"
+            ) ? 0 : 10
+
+        case .lgWebOS:
+            return target.contains(
+                "webos-second-screen"
+            ) ? 0 : 10
+
+        case .roku:
+            return target == "roku:ecp" ? 0 : 10
+
+        default:
+            return 10
+        }
+    }
+
+    private func device(from response: SSDPResponse) -> TVDevice? {
+        guard let host = response.location.host else { return nil }
+
+        let discoveryIdentity =
+            response.canonicalUSN ??
+            host.lowercased()
+
+        switch response.platformHint {
+        case .roku:
+            return TVDevice(
+                id: "roku-\(discoveryIdentity)",
+                name: "Roku",
+                platform: .roku,
+                host: host,
+                port: response.location.port ?? 8060,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .appLaunching,
+                    .playback
+                ]
+            )
+
+        case .samsung:
+            return TVDevice(
+                id: "samsung-\(discoveryIdentity)",
+                name: "Samsung TV",
+                platform: .samsung,
+                host: host,
+                port: 8002,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .inputSelection,
+                    .playback,
+                    .channels
+                ]
+            )
+
+        case .lgWebOS:
+            return TVDevice(
+                id: "lg-\(discoveryIdentity)",
+                name: "LG TV",
+                platform: .lgWebOS,
+                host: host,
+                port: 3001,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .inputSelection,
+                    .appLaunching,
+                    .playback,
+                    .channels
+                ]
+            )
+
+        case .fireTV:
+            return TVDevice(
+                id: "firetv-\(discoveryIdentity)",
+                name: "Fire TV",
+                platform: .fireTV,
+                host: host,
+                port: 8080,
+                capabilities: [
+                    .directionalNavigation,
+                    .touchpad,
+                    .keyboard,
+                    .power,
+                    .volume,
+                    .mute,
+                    .appLaunching,
+                    .playback
+                ]
+            )
+
+        default:
+            return nil
+        }
+    }
+
+    private func isValidLocalIPv4Address(_ value: String) -> Bool {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return false }
+
+        let octets = parts.compactMap { part -> Int? in
+            guard !part.isEmpty,
+                  part.count <= 3,
+                  part.allSatisfy({ $0.isNumber }),
+                  let number = Int(part),
+                  (0...255).contains(number) else {
+                return nil
+            }
+
+            return number
+        }
+
+        guard octets.count == 4 else { return false }
+
+        if octets[0] == 10 { return true }
+        if octets[0] == 172 && (16...31).contains(octets[1]) { return true }
+        if octets[0] == 192 && octets[1] == 168 { return true }
+        if octets[0] == 169 && octets[1] == 254 { return true }
+        if octets[0] == 100 && (64...127).contains(octets[1]) { return true }
+
+        return false
+    }
+}
+
+@MainActor
+@Observable
+final class PurchaseManager {
+    static let weeklyID = "orbit.weekly"
+    static let monthlyID = "orbit.monthly"
+
+    private(set) var products: [Product] = []
+    private(set) var isPremium = false
+    private(set) var activeProductID: String?
+    private(set) var entitlementsResolved = false
+    private(set) var isLoading = false
+    private(set) var isPurchasing = false
+    private(set) var purchasePending = false
+    var errorMessage: String?
+
+    @ObservationIgnored private var updatesTask: Task<Void, Never>?
+
+    init() {
+        updatesTask = observeTransactions()
+        Task { await refresh() }
+    }
+
+    deinit {
+        updatesTask?.cancel()
+    }
+
+    func refresh() async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        // Current entitlements are locally verifiable and must not depend
+        // on a successful product-catalog request. Orbit is a LAN remote, so
+        // an active subscriber may legitimately launch without internet.
+        await refreshEntitlements()
+
+        do {
+            products = try await Product.products(for: [Self.weeklyID, Self.monthlyID])
+                .sorted { lhs, rhs in
+                    if lhs.id == rhs.id { return false }
+                    return lhs.id == Self.weeklyID
+                }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func purchase(_ product: Product) async -> Bool {
+        guard !isPurchasing else { return false }
+
+        isPurchasing = true
+        purchasePending = false
+        errorMessage = nil
+        defer { isPurchasing = false }
+
+        do {
+            let result = try await product.purchase()
+
+            switch result {
+            case .success(let verification):
+                let transaction = try verified(verification)
+                await transaction.finish()
+                await refreshEntitlements()
+                return isPremium
+
+            case .pending:
+                purchasePending = true
+                return false
+
+            case .userCancelled:
+                return false
+
+            @unknown default:
+                return false
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func restore() async {
+        guard !isPurchasing else { return }
+
+        isPurchasing = true
+        purchasePending = false
+        errorMessage = nil
+        defer { isPurchasing = false }
+
+        do {
+            try await AppStore.sync()
+            await refreshEntitlements()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func product(id: String) -> Product? {
+        products.first { $0.id == id }
+    }
+
+    func refreshForForeground() async {
+        if products.isEmpty {
+            await refresh()
+        } else {
+            await refreshEntitlements()
+        }
+    }
+
+    func refreshEntitlements() async {
+        var active = false
+        var activeProductID: String?
+        let now = Date()
+
+        for await result in Transaction.currentEntitlements {
+            guard let transaction = try? verified(result) else {
+                continue
+            }
+
+            let isOrbitSubscription = [
+                Self.weeklyID,
+                Self.monthlyID
+            ].contains(transaction.productID)
+
+            let isNotExpired =
+                transaction.expirationDate.map {
+                    $0 > now
+                } ?? true
+
+            if isOrbitSubscription,
+               transaction.revocationDate == nil,
+               !transaction.isUpgraded,
+               isNotExpired {
+                active = true
+                activeProductID =
+                    transaction.productID
+                break
+            }
+        }
+
+        #if DEBUG
+        if UserDefaults.standard.bool(
+            forKey: AppSettings.Keys.premiumOverride
+        ) {
+            active = true
+        }
+        #endif
+
+        isPremium = active
+        self.activeProductID =
+            activeProductID
+        entitlementsResolved = true
+
+        if active {
+            purchasePending = false
+        }
+    }
+
+    private func observeTransactions() -> Task<Void, Never> {
+        Task { [weak self] in
+            for await update in Transaction.updates {
+                guard let self else { return }
+                if let transaction = try? self.verified(update) {
+                    await transaction.finish()
+                    self.purchasePending = false
+                    await self.refreshEntitlements()
+                }
+            }
+        }
+    }
+
+    private func verified<T>(_ result: VerificationResult<T>) throws -> T {
+        switch result {
+        case .verified(let safe): return safe
+        case .unverified: throw StoreError.failedVerification
+        }
+    }
+
+    enum StoreError: Error {
+        case failedVerification
+    }
+}
+
+@MainActor
+@Observable
+final class RemoteCustomizationStore {
+    var preferences: RemoteCustomizationPreferences {
+        didSet { persist() }
+    }
+
+    init() {
+        if let data = UserDefaults.standard.data(
+            forKey: AppSettings.Keys.remoteCustomization
+        ),
+           let decoded = try? JSONDecoder().decode(
+               RemoteCustomizationPreferences.self,
+               from: data
+           ) {
+            preferences = decoded
+        } else {
+            preferences = RemoteCustomizationPreferences()
+        }
+    }
+
+    func setDefaultMode(_ mode: RemoteControlMode) {
+        preferences.defaultMode = mode
+    }
+
+    func setShowInput(_ value: Bool) {
+        preferences.showInput = value
+    }
+
+    func setShowPlayback(_ value: Bool) {
+        preferences.showPlayback = value
+    }
+
+    func setShowKeyboard(_ value: Bool) {
+        preferences.showKeyboard = value
+    }
+
+    func setShowApps(_ value: Bool) {
+        preferences.showApps = value
+    }
+
+    func reset() {
+        preferences = RemoteCustomizationPreferences()
+    }
+
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(preferences) else { return }
+        UserDefaults.standard.set(data, forKey: AppSettings.Keys.remoteCustomization)
+    }
+}
+
+@MainActor
+@Observable
+final class RemoteFavoritesStore {
+    private(set) var favoritesByDevice: [String: [RemoteFavorite]] = [:]
+
+    init() {
+        guard let data = UserDefaults.standard.data(
+            forKey: AppSettings.Keys.remoteFavorites
+        ),
+        let decoded = try? JSONDecoder().decode(
+            [String: [RemoteFavorite]].self,
+            from: data
+        ) else {
+            return
+        }
+
+        favoritesByDevice = decoded
+    }
+
+    func favorites(
+        for deviceID: String,
+        kind: RemoteFavoriteKind
+    ) -> [RemoteFavorite] {
+        (favoritesByDevice[deviceID] ?? []).filter { $0.kind == kind }
+    }
+
+    func contains(
+        deviceID: String,
+        kind: RemoteFavoriteKind,
+        targetID: String
+    ) -> Bool {
+        favoritesByDevice[deviceID]?.contains {
+            $0.kind == kind && $0.targetID == targetID
+        } ?? false
+    }
+
+    func toggle(
+        deviceID: String,
+        favorite: RemoteFavorite
+    ) {
+        var items = favoritesByDevice[deviceID] ?? []
+
+        if let index = items.firstIndex(where: {
+            $0.kind == favorite.kind && $0.targetID == favorite.targetID
+        }) {
+            items.remove(at: index)
+        } else {
+            items.append(favorite)
+        }
+
+        favoritesByDevice[deviceID] = items
+        persist()
+    }
+
+    func migrate(from oldDeviceID: String, to newDeviceID: String) {
+        guard oldDeviceID != newDeviceID,
+              let oldItems = favoritesByDevice.removeValue(forKey: oldDeviceID) else {
+            return
+        }
+
+        var newItems = favoritesByDevice[newDeviceID] ?? []
+
+        for item in oldItems where !newItems.contains(item) {
+            newItems.append(item)
+        }
+
+        favoritesByDevice[newDeviceID] = newItems
+        persist()
+    }
+
+    func removeAll(for deviceID: String) {
+        guard favoritesByDevice.removeValue(forKey: deviceID) != nil else { return }
+        persist()
+    }
+
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(favoritesByDevice) else { return }
+        UserDefaults.standard.set(data, forKey: AppSettings.Keys.remoteFavorites)
+    }
+}
+
+@MainActor
+final class RemoteCommandQueue {
+    private var tail: Task<Void, Never>?
+    private var pendingCoalescedCommands:
+        Set<RemoteCommand> = []
+    private var generation = 0
+
+    @discardableResult
+    func enqueue(
+        command: RemoteCommand,
+        coalescing: Bool,
+        _ operation: @escaping @MainActor () async -> Void
+    ) -> Bool {
+        // Only long-press repeat ticks are coalesced. Normal taps are never
+        // dropped, even when a slow TV has work queued ahead of them.
+        if coalescing,
+           pendingCoalescedCommands.contains(
+               command
+           ) {
+            return false
+        }
+
+        if coalescing {
+            pendingCoalescedCommands.insert(
+                command
+            )
+        }
+
+        let previous = tail
+        let currentGeneration = generation
+
+        let next = Task { @MainActor [weak self] in
+            if let previous {
+                await previous.value
+            }
+
+            guard let self else { return }
+
+            defer {
+                if self.generation ==
+                    currentGeneration,
+                   coalescing {
+                    self.pendingCoalescedCommands.remove(
+                        command
+                    )
+                }
+            }
+
+            guard !Task.isCancelled,
+                  self.generation ==
+                    currentGeneration else {
+                return
+            }
+
+            await operation()
+        }
+
+        tail = next
+        return true
+    }
+
+    func enqueueAndWait(
+        _ operation: @escaping @MainActor () async throws -> Void
+    ) async throws {
+        let previous = tail
+        let currentGeneration = generation
+
+        let resultTask = Task {
+            @MainActor () -> Result<Void, Error> in
+
+            if let previous {
+                await previous.value
+            }
+
+            guard !Task.isCancelled,
+                  self.generation == currentGeneration else {
+                return .failure(CancellationError())
+            }
+
+            do {
+                try await operation()
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }
+
+        tail = Task { @MainActor in
+            _ = await resultTask.value
+        }
+
+        switch await resultTask.value {
+        case .success:
+            return
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func cancel() {
+        generation += 1
+        tail?.cancel()
+        tail = nil
+        pendingCoalescedCommands.removeAll()
+    }
+
+    func waitUntilIdle() async {
+        await tail?.value
+    }
+}
+
+@MainActor
+@Observable
+final class AppModel {
+    var connectionState: TVConnectionState = .connecting
+    var currentCapabilities: Set<TVCapability> = []
+    var pairingRequirement: TVPairingRequirement = .none
+    var lastControlError: String?
+    var proGateRequested = false
+
+    let deviceStore = DeviceStore()
+    let discovery = DiscoveryService()
+    let purchases = PurchaseManager()
+    let customization = RemoteCustomizationStore()
+    let favorites = RemoteFavoritesStore()
+
+    @ObservationIgnored private var adapter: TVControlling?
+    @ObservationIgnored private var connectTask: Task<Void, Never>?
+    @ObservationIgnored private var reconnectTask: Task<Void, Never>?
+    @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private var connectingDeviceID: String?
+    @ObservationIgnored private var entitlementTask: Task<Void, Never>?
+    @ObservationIgnored private var wasBackgrounded = false
+    private var transientSelectedDevice: TVDevice?
+    @ObservationIgnored private var pendingFreeVerification:
+        (freeDeviceID: String, candidateDeviceID: String)?
+    @ObservationIgnored private let commandQueue = RemoteCommandQueue()
+
+    init() {
+        KeychainStore.prepareForCurrentInstall()
+        deviceStore.ensureAvailableSelection()
+
+        let storedFreeID =
+            UserDefaults.standard.string(
+                forKey:
+                    AppSettings.Keys.freeDeviceID
+            )
+        let storedFreeDevice =
+            deviceStore.devices.first {
+                $0.id == storedFreeID
+            }
+
+        if storedFreeID == nil ||
+            storedFreeDevice == nil ||
+            storedFreeDevice.map({
+                !TVPlatformAvailability.isEnabled(
+                    $0.platform
+                )
+            }) == true {
+            if let selectedID =
+                    deviceStore.selectedDeviceID {
+                UserDefaults.standard.set(
+                    selectedID,
+                    forKey:
+                        AppSettings.Keys.freeDeviceID
+                )
+            } else {
+                UserDefaults.standard.removeObject(
+                    forKey:
+                        AppSettings.Keys.freeDeviceID
+                )
+            }
+        }
+
+        discovery.onDevicesUpdated = {
+            [weak self] discoveredDevices in
+
+            guard let self else { return }
+
+            let movedDeviceIDs =
+                self.deviceStore.refreshKnownDevices(
+                    from: discoveredDevices
+                )
+
+            guard let currentID =
+                    self.currentDevice?.id,
+                  movedDeviceIDs.contains(
+                      currentID
+                  ) else {
+                return
+            }
+
+            self.refreshSelection()
+        }
+    }
+
+    var currentDevice: TVDevice? {
+        transientSelectedDevice ??
+            deviceStore.selectedDevice
+    }
+
+    var requiresPairing: Bool {
+        if case .none = pairingRequirement {
+            return false
+        }
+        return true
+    }
+
+    var connectionMessage: String? {
+        switch connectionState {
+        case .connecting:
+            switch currentDevice?.platform {
+            case .samsung, .lgWebOS:
+                return "Approve Orbit on your TV if asked."
+            case .androidTV:
+                if requiresPairing {
+                    return "Enter the code shown on your TV."
+                }
+                return "Connecting to Android TV…"
+            case .fireTV:
+                if requiresPairing {
+                    return "Enter the 4-digit code shown on your Fire TV."
+                }
+                return "Connecting to Fire TV…"
+            default:
+                return nil
+            }
+
+        case .unavailable:
+            return lastControlError
+
+        case .connected, .off:
+            return nil
+        }
+    }
+
+    @discardableResult
+    func prepareSelection(
+        _ device: TVDevice
+    ) async -> Bool {
+        if purchases.isPremium {
+            return select(device)
+        }
+
+        guard let freeID =
+                UserDefaults.standard.string(
+                    forKey:
+                        AppSettings.Keys.freeDeviceID
+                ) else {
+            return select(device)
+        }
+
+        if deviceStore.matchesStoredDevice(
+            device,
+            id: freeID
+        ) {
+            return select(device)
+        }
+
+        let identified: TVDevice?
+
+        switch device.platform {
+        case .samsung:
+            identified =
+                try? await SamsungTizenAdapter(
+                    device: device
+                ).identify()
+
+        case .androidTV:
+            identified =
+                try? await AndroidTVAdapter(
+                    device: device
+                ).identifyForSelection()
+
+        case .lgWebOS:
+            identified =
+                try? await LGWebOSAdapter(
+                    device: device
+                ).identify()
+
+        #if DEBUG
+        case .roku:
+            identified =
+                try? await RokuAdapter(
+                    device: device
+                ).identify()
+        #endif
+
+        default:
+            identified = nil
+        }
+
+        if let identified {
+            guard identified.id == freeID ||
+                    deviceStore.matchesStoredDevice(
+                        identified,
+                        id: freeID
+                    ) else {
+                return false
+            }
+
+            return select(identified)
+        }
+
+        // Android TV can identify itself from the remote TLS server key
+        // during connection. Other unresolved candidates fall back to
+        // the staged verification in select(_:).
+        return select(device)
+    }
+
+    @discardableResult
+    func select(_ device: TVDevice) -> Bool {
+        pendingFreeVerification = nil
+
+        let freeID = UserDefaults.standard.string(
+            forKey: AppSettings.Keys.freeDeviceID
+        )
+        let requiresFreeVerification =
+            !purchases.isPremium &&
+            freeID != nil &&
+            !deviceStore.matchesStoredDevice(
+                device,
+                id: freeID!
+            )
+
+        if requiresFreeVerification,
+           let freeID {
+            // Keep an unverified candidate entirely in memory. It must not
+            // become a saved/selected TV until its durable identity proves
+            // that it is the user's Free TV.
+            pendingFreeVerification = (
+                freeDeviceID: freeID,
+                candidateDeviceID: device.id
+            )
+            transientSelectedDevice = device
+        } else {
+            transientSelectedDevice = nil
+        }
+
+        connectTask?.cancel()
+        reconnectTask?.cancel()
+        eventTask?.cancel()
+        connectingDeviceID = nil
+        commandQueue.cancel()
+
+        let previousAdapter = adapter
+        let selectedDevice: TVDevice
+
+        if requiresFreeVerification {
+            selectedDevice = device
+        } else {
+            selectedDevice =
+                deviceStore.addOrUpdate(device)
+
+            if purchases.isPremium ||
+                freeID == nil {
+                UserDefaults.standard.set(
+                    selectedDevice.id,
+                    forKey: AppSettings.Keys.freeDeviceID
+                )
+            }
+        }
+
+        let replacement =
+            TVAdapterFactory.makeAdapter(
+                for: selectedDevice
+            )
+        adapter = replacement
+        currentCapabilities =
+            selectedDevice.capabilities
+        pairingRequirement = .none
+        lastControlError = nil
+
+        Task { @MainActor [weak self, previousAdapter, replacement] in
+            await previousAdapter?.disconnect()
+
+            guard let self,
+                  self.adapter === replacement else {
+                return
+            }
+
+            self.connect()
+        }
+
+        return true
+    }
+
+    private func finalizeResolvedDevice(
+        originalDeviceID: String,
+        resolvedDevice: TVDevice,
+        adapter: TVControlling
+    ) async -> Bool {
+        guard let pending =
+                pendingFreeVerification,
+              pending.candidateDeviceID ==
+                originalDeviceID else {
+            transientSelectedDevice = nil
+            deviceStore.reconcile(
+                oldDeviceID: originalDeviceID,
+                with: resolvedDevice
+            )
+            favorites.migrate(
+                from: originalDeviceID,
+                to: resolvedDevice.id
+            )
+            return true
+        }
+
+        pendingFreeVerification = nil
+
+        let isFreeTV =
+            resolvedDevice.id ==
+                pending.freeDeviceID ||
+            deviceStore.matchesStoredDevice(
+                resolvedDevice,
+                id: pending.freeDeviceID
+            )
+
+        if isFreeTV {
+            transientSelectedDevice = nil
+            deviceStore.reconcile(
+                oldDeviceID:
+                    pending.freeDeviceID,
+                with: resolvedDevice
+            )
+            favorites.migrate(
+                from: pending.freeDeviceID,
+                to: resolvedDevice.id
+            )
+
+            if let accepted =
+                deviceStore.devices.first(
+                    where: {
+                        $0.id ==
+                            resolvedDevice.id
+                    }
+                ) {
+                deviceStore.select(accepted)
+            }
+
+            UserDefaults.standard.set(
+                resolvedDevice.id,
+                forKey:
+                    AppSettings.Keys.freeDeviceID
+            )
+            return true
+        }
+
+        // Verification rejected the candidate. Because it was never written
+        // to DeviceStore, restoring the Free TV is transactional and cannot
+        // delete a previously saved Pro TV or its pairing credential.
+        transientSelectedDevice = nil
+        await adapter.disconnect()
+
+        if let freeDevice =
+            deviceStore.devices.first(
+                where: {
+                    $0.id ==
+                        pending.freeDeviceID
+                }
+            ) {
+            deviceStore.select(freeDevice)
+        }
+
+        pairingRequirement = .none
+        connectionState = .connecting
+        currentCapabilities =
+            currentDevice?.capabilities ?? []
+        lastControlError = nil
+        proGateRequested = true
+        refreshSelection()
+        return false
+    }
+
+    private func abandonPendingFreeVerification() {
+        guard let pending =
+                pendingFreeVerification else {
+            return
+        }
+
+        pendingFreeVerification = nil
+        transientSelectedDevice = nil
+
+        if let freeDevice =
+            deviceStore.devices.first(
+                where: {
+                    $0.id ==
+                        pending.freeDeviceID
+                }
+            ) {
+            deviceStore.select(freeDevice)
+        }
+    }
+
+    private func enforceFreeSelectionIfNeeded() {
+        guard purchases.entitlementsResolved,
+              !purchases.isPremium,
+              pendingFreeVerification == nil,
+              transientSelectedDevice == nil,
+              let freeID = UserDefaults.standard.string(
+                  forKey: AppSettings.Keys.freeDeviceID
+              ),
+              let freeDevice = deviceStore.devices.first(
+                  where: { $0.id == freeID }
+              ),
+              deviceStore.selectedDeviceID != freeID else {
+            return
+        }
+
+        deviceStore.select(freeDevice)
+        refreshSelection()
+    }
+
+    func dismissProGate() {
+        proGateRequested = false
+    }
+
+    func canAddOrUse(_ device: TVDevice) -> Bool {
+        if purchases.isPremium {
+            return true
+        }
+
+        guard let freeID = UserDefaults.standard.string(
+            forKey: AppSettings.Keys.freeDeviceID
+        ) else {
+            return true
+        }
+
+        return deviceStore.matchesStoredDevice(
+            device,
+            id: freeID
+        )
+    }
+
+    func canUse(_ device: TVDevice) -> Bool {
+        if purchases.isPremium {
+            return true
+        }
+
+        let freeID = UserDefaults.standard.string(forKey: AppSettings.Keys.freeDeviceID)
+        return freeID == nil || freeID == device.id
+    }
+
+    @discardableResult
+    func activate(_ device: TVDevice) -> Bool {
+        guard canUse(device) else {
+            return false
+        }
+
+        if purchases.isPremium {
+            UserDefaults.standard.set(device.id, forKey: AppSettings.Keys.freeDeviceID)
+        }
+
+        deviceStore.select(device)
+        refreshSelection()
+        return true
+    }
+
+    func connect() {
+        guard purchases.entitlementsResolved else {
+            entitlementTask?.cancel()
+            entitlementTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                await self.purchases.refreshEntitlements()
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                self.entitlementTask = nil
+                self.enforceFreeSelectionIfNeeded()
+                self.connect()
+            }
+            return
+        }
+
+        guard let device = currentDevice else {
+            adapter = nil
+            connectionState = .connecting
+            currentCapabilities = []
+            pairingRequirement = .none
+            return
+        }
+
+        if connectingDeviceID == device.id,
+           connectionState == .connecting {
+            return
+        }
+
+        connectTask?.cancel()
+
+        if adapter?.device.id != device.id {
+            commandQueue.cancel()
+
+            let previousAdapter = adapter
+            let replacement = TVAdapterFactory.makeAdapter(for: device)
+            adapter = replacement
+
+            Task {
+                await previousAdapter?.disconnect()
+            }
+        }
+
+        guard let adapter else { return }
+
+        let deviceID = device.id
+        connectingDeviceID = deviceID
+        connectionState = .connecting
+        lastControlError = nil
+
+        connectTask = Task { @MainActor [weak self, adapter] in
+            do {
+                let connection = try await adapter.connect()
+
+                guard !Task.isCancelled,
+                      let self,
+                      self.currentDevice?.id == deviceID else {
+                    return
+                }
+
+                let resolvedDevice = adapter.device
+
+                guard await self.finalizeResolvedDevice(
+                    originalDeviceID: deviceID,
+                    resolvedDevice: resolvedDevice,
+                    adapter: adapter
+                ) else {
+                    return
+                }
+
+                self.connectionState = connection.state
+                self.currentCapabilities = connection.capabilities
+                self.pairingRequirement = connection.pairingRequirement
+                self.lastControlError = nil
+                self.connectingDeviceID = nil
+
+                if case .none = connection.pairingRequirement {
+                    self.startEventMonitoring(
+                        adapter: adapter,
+                        deviceID: resolvedDevice.id
+                    )
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled,
+                      let self,
+                      self.currentDevice?.id == deviceID else {
+                    return
+                }
+
+                let wasVerifyingFreeTV =
+                    self.pendingFreeVerification != nil
+
+                self.abandonPendingFreeVerification()
+
+                if wasVerifyingFreeTV {
+                    self.connectingDeviceID = nil
+                    self.refreshSelection()
+                    return
+                }
+
+                self.connectionState = .unavailable
+                self.currentCapabilities = []
+                self.pairingRequirement = .none
+                self.lastControlError = error.localizedDescription
+                self.connectingDeviceID = nil
+            }
+        }
+    }
+
+    func appDidBecomeActive() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            await self.purchases.refreshForForeground()
+            self.enforceFreeSelectionIfNeeded()
+        }
+
+        guard currentDevice != nil else {
+            wasBackgrounded = false
+            return
+        }
+
+        let shouldReconnect =
+            wasBackgrounded ||
+            connectionState == .connecting ||
+            connectionState == .unavailable
+
+        let returningFromBackground =
+            wasBackgrounded
+        wasBackgrounded = false
+
+        if requiresPairing,
+           returningFromBackground,
+           let adapter {
+            Task { @MainActor [weak self, adapter] in
+                do {
+                    let requirement =
+                        try await adapter
+                            .pairingRequirement()
+
+                    guard let self,
+                          self.adapter === adapter else {
+                        return
+                    }
+
+                    self.pairingRequirement =
+                        requirement
+                    self.connectionState =
+                        .connecting
+                    self.lastControlError = nil
+                } catch {
+                    guard let self,
+                          self.adapter === adapter else {
+                        return
+                    }
+
+                    self.lastControlError =
+                        error.localizedDescription
+                }
+            }
+            return
+        }
+
+        if !requiresPairing,
+           shouldReconnect {
+            connect()
+        }
+    }
+
+    func appDidEnterBackground() {
+        wasBackgrounded = true
+        entitlementTask?.cancel()
+        entitlementTask = nil
+        connectTask?.cancel()
+        connectTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        eventTask?.cancel()
+        eventTask = nil
+        connectingDeviceID = nil
+        commandQueue.cancel()
+
+        guard let activeAdapter = adapter else {
+            return
+        }
+
+        connectionState = .connecting
+
+        Task {
+            await activeAdapter.disconnect()
+        }
+    }
+
+    @discardableResult
+    func submitPairing(
+        _ response: TVPairingResponse
+    ) async -> Bool {
+        guard let adapter,
+              let currentDevice else {
+            return false
+        }
+
+        lastControlError = nil
+
+        do {
+            try await adapter.pair(using: response)
+
+            let resolvedDevice = adapter.device
+
+            let accepted =
+                await finalizeResolvedDevice(
+                    originalDeviceID:
+                        currentDevice.id,
+                    resolvedDevice: resolvedDevice,
+                    adapter: adapter
+                )
+
+            if !accepted {
+                return true
+            }
+
+            pairingRequirement = .none
+            currentCapabilities = resolvedDevice.capabilities
+            connectionState = .connected
+            lastControlError = nil
+
+            startEventMonitoring(
+                adapter: adapter,
+                deviceID: resolvedDevice.id
+            )
+            return true
+        } catch {
+            lastControlError = error.localizedDescription
+            return false
+        }
+    }
+
+    func cancelPairing() {
+        guard requiresPairing else { return }
+
+        let activeAdapter = adapter
+        let wasVerifyingFreeTV =
+            pendingFreeVerification != nil
+
+        abandonPendingFreeVerification()
+
+        if wasVerifyingFreeTV {
+            pairingRequirement = .none
+            Task {
+                await activeAdapter?.disconnect()
+            }
+            refreshSelection()
+            return
+        }
+
+        pairingRequirement = .none
+        connectionState = .unavailable
+        lastControlError =
+            "Pairing canceled. Reconnect when you’re ready."
+
+        Task {
+            await activeAdapter?.disconnect()
+        }
+    }
+
+    func send(
+        _ command: RemoteCommand,
+        isRepeat: Bool = false
+    ) {
+        guard let adapter else { return }
+
+        let deviceID = adapter.device.id
+
+        let accepted = commandQueue.enqueue(
+            command: command,
+            coalescing: isRepeat
+        ) { [weak self, adapter] in
+            guard let self,
+                  self.currentDevice?.id == deviceID else {
+                return
+            }
+
+            do {
+                try await adapter.send(command)
+
+                guard self.currentDevice?.id == deviceID else {
+                    return
+                }
+
+                self.lastControlError = nil
+                self.connectionState = .connected
+            } catch is CancellationError {
+                return
+            } catch {
+                guard self.currentDevice?.id == deviceID else {
+                    return
+                }
+
+                self.applyControlError(error)
+            }
+        }
+
+        if accepted {
+            Haptics.shared.tap()
+        }
+    }
+
+    func send(text: String) async throws {
+        guard let adapter else { throw TVControlError.unreachable }
+
+        let deviceID = adapter.device.id
+
+        try await commandQueue.enqueueAndWait { [weak self, adapter] in
+            guard let self,
+                  self.currentDevice?.id == deviceID else {
+                throw CancellationError()
+            }
+
+            try await adapter.send(text: text)
+
+            guard self.currentDevice?.id == deviceID else {
+                throw CancellationError()
+            }
+
+            self.lastControlError = nil
+            self.connectionState = .connected
+        }
+    }
+
+    func apps() async -> [TVApp] {
+        guard let adapter else { return [] }
+        return (try? await adapter.apps()) ?? []
+    }
+
+    func inputs() async -> [TVInput] {
+        guard let adapter else { return [] }
+        return (try? await adapter.inputs()) ?? []
+    }
+
+    func launch(_ app: TVApp) async {
+        guard let adapter else { return }
+
+        do {
+            try await commandQueue.enqueueAndWait {
+                try await adapter.launch(app: app)
+            }
+            lastControlError = nil
+            connectionState = .connected
+        } catch is CancellationError {
+            return
+        } catch {
+            applyControlError(error)
+        }
+    }
+
+    func select(_ input: TVInput) async {
+        guard let adapter else { return }
+
+        do {
+            try await commandQueue.enqueueAndWait {
+                try await adapter.select(input: input)
+            }
+            lastControlError = nil
+            connectionState = .connected
+        } catch is CancellationError {
+            return
+        } catch {
+            applyControlError(error)
+        }
+    }
+
+    func forgetCurrentDevice() {
+        guard let device = currentDevice else { return }
+
+        connectTask?.cancel()
+        connectTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        eventTask?.cancel()
+        eventTask = nil
+        connectingDeviceID = nil
+        commandQueue.cancel()
+
+        let previousAdapter = adapter
+        adapter = nil
+
+        favorites.removeAll(for: device.id)
+        deviceStore.remove(device)
+
+        Task { @MainActor [weak self, previousAdapter] in
+            await previousAdapter?.disconnect()
+
+            guard let self else { return }
+
+            if self.currentDevice != nil {
+                self.refreshSelection()
+            } else {
+                self.connectionState = .connecting
+                self.currentCapabilities = []
+                self.pairingRequirement = .none
+                self.lastControlError = nil
+            }
+        }
+    }
+
+    func refreshSelection() {
+        connectTask?.cancel()
+        connectTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        eventTask?.cancel()
+        eventTask = nil
+        connectingDeviceID = nil
+        commandQueue.cancel()
+
+        let previousAdapter = adapter
+        let replacement = currentDevice.map(TVAdapterFactory.makeAdapter)
+        adapter = replacement
+        currentCapabilities = currentDevice?.capabilities ?? []
+        pairingRequirement = .none
+        lastControlError = nil
+
+        Task { @MainActor [weak self, previousAdapter, replacement] in
+            await previousAdapter?.disconnect()
+
+            guard let self else { return }
+
+            if let replacement,
+               self.adapter === replacement,
+               self.currentDevice != nil {
+                self.connect()
+            } else if self.currentDevice == nil {
+                self.connectionState = .connecting
+            }
+        }
+    }
+
+    private func startEventMonitoring(
+        adapter: TVControlling,
+        deviceID: String
+    ) {
+        eventTask?.cancel()
+
+        let stream = adapter.events
+
+        eventTask = Task { @MainActor [weak self, adapter] in
+            for await event in stream {
+                guard !Task.isCancelled,
+                      let self,
+                      self.adapter === adapter,
+                      self.currentDevice?.id == deviceID else {
+                    return
+                }
+
+                self.handleAdapterEvent(
+                    event,
+                    adapter: adapter,
+                    deviceID: deviceID
+                )
+            }
+        }
+    }
+
+    private func handleAdapterEvent(
+        _ event: TVAdapterEvent,
+        adapter: TVControlling,
+        deviceID: String
+    ) {
+        switch event {
+        case .disconnected(let message):
+            connectionState = .unavailable
+            lastControlError = message ??
+                "The TV connection was interrupted."
+            scheduleReconnect(
+                adapter: adapter,
+                deviceID: deviceID
+            )
+
+        case .powerStateChanged(let state):
+            connectionState = state
+
+        case .pairingRevoked(let message):
+            reconnectTask?.cancel()
+            connectionState = .unavailable
+            lastControlError = message ??
+                "The TV no longer recognizes Orbit. Pair it again."
+        }
+    }
+
+    private func scheduleReconnect(
+        adapter: TVControlling,
+        deviceID: String
+    ) {
+        reconnectTask?.cancel()
+
+        reconnectTask = Task { @MainActor [weak self, adapter] in
+            try? await Task.sleep(
+                nanoseconds: 1_500_000_000
+            )
+
+            guard !Task.isCancelled,
+                  let self,
+                  self.adapter === adapter,
+                  self.currentDevice?.id == deviceID,
+                  !self.requiresPairing else {
+                return
+            }
+
+            self.connect()
+        }
+    }
+
+    private func applyControlError(_ error: Error) {
+        lastControlError = error.localizedDescription
+
+        if let controlError = error as? TVControlError {
+            if controlError.affectsConnectionState {
+                connectionState = .unavailable
+            }
+            return
+        }
+
+        connectionState = .unavailable
+    }
+}
