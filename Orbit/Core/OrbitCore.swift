@@ -47,12 +47,14 @@ struct OrbitPressStyle: ButtonStyle {
 }
 
 struct OrbitPrimaryButtonStyle: ButtonStyle {
+    var height: CGFloat = 54
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
             .foregroundStyle(Color(uiColor: .systemBackground))
             .frame(maxWidth: .infinity)
-            .frame(height: 54)
+            .frame(height: height)
             .background(
                 Capsule(style: .continuous)
                     .fill(Color.primary.opacity(configuration.isPressed ? 0.78 : 1))
