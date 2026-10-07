@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 struct DPadView: View {
-    let onCommand: (RemoteCommand) -> Void
+    let onCommand: (RemoteCommand, Bool) -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -24,7 +24,7 @@ struct DPadView: View {
                     .offset(x: radius)
 
                 Button {
-                    onCommand(.select)
+                    onCommand(.select, false)
                 } label: {
                     Text("OK")
                         .font(.system(size: 15, weight: .semibold))
@@ -44,7 +44,7 @@ struct DPadView: View {
 private struct DirectionButton: View {
     let systemName: String
     let command: RemoteCommand
-    let onCommand: (RemoteCommand) -> Void
+    let onCommand: (RemoteCommand, Bool) -> Void
 
     private var accessibilityName: String {
         switch command {
@@ -57,18 +57,87 @@ private struct DirectionButton: View {
     }
 
     var body: some View {
-        Button {
-            onCommand(command)
-        } label: {
+        RepeatableRemoteButton(
+            action: { isRepeat in
+                onCommand(command, isRepeat)
+            }
+        ) {
             Image(systemName: systemName)
                 .font(.system(size: 17, weight: .semibold))
                 .frame(width: 56, height: 56)
                 .contentShape(Circle())
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 28))
-        .buttonRepeatBehavior(.enabled)
         .foregroundStyle(.primary)
         .accessibilityLabel(accessibilityName)
+    }
+}
+
+private struct RepeatableRemoteButton<Label: View>: View {
+    let action: (Bool) -> Void
+    @ViewBuilder let label: () -> Label
+
+    @State private var repeatTask: Task<Void, Never>?
+    @State private var didRepeat = false
+
+    var body: some View {
+        Button {
+            guard !didRepeat else { return }
+            action(false)
+        } label: {
+            label()
+        }
+        .onLongPressGesture(
+            minimumDuration: 0.34,
+            maximumDistance: 44
+        ) {
+            didRepeat = true
+            beginRepeating()
+        } onPressingChanged: { isPressing in
+            if !isPressing {
+                endRepeating()
+            }
+        }
+        .onDisappear {
+            repeatTask?.cancel()
+            repeatTask = nil
+        }
+    }
+
+    private func beginRepeating() {
+        repeatTask?.cancel()
+
+        repeatTask = Task { @MainActor in
+            action(true)
+
+            while !Task.isCancelled {
+                try? await Task.sleep(
+                    nanoseconds: 120_000_000
+                )
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                action(true)
+            }
+        }
+    }
+
+    private func endRepeating() {
+        repeatTask?.cancel()
+        repeatTask = nil
+
+        guard didRepeat else { return }
+
+        // Keep suppression alive through the Button release callback so a
+        // long press does not generate an extra discrete tap on release.
+        Task { @MainActor in
+            try? await Task.sleep(
+                nanoseconds: 80_000_000
+            )
+            didRepeat = false
+        }
     }
 }
 
@@ -105,7 +174,7 @@ struct RoundRemoteButton: View {
 }
 
 struct VolumePill: View {
-    let onCommand: (RemoteCommand) -> Void
+    let onCommand: (RemoteCommand, Bool) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -113,19 +182,25 @@ struct VolumePill: View {
                 systemName: "minus",
                 accessibilityLabel: "Volume Down",
                 repeats: true,
-                action: { onCommand(.volumeDown) }
+                action: { isRepeat in
+                    onCommand(.volumeDown, isRepeat)
+                }
             )
             SegmentButton(
                 systemName: "speaker.slash.fill",
                 accessibilityLabel: "Mute",
                 repeats: false,
-                action: { onCommand(.mute) }
+                action: { _ in
+                    onCommand(.mute, false)
+                }
             )
             SegmentButton(
                 systemName: "plus",
                 accessibilityLabel: "Volume Up",
                 repeats: true,
-                action: { onCommand(.volumeUp) }
+                action: { isRepeat in
+                    onCommand(.volumeUp, isRepeat)
+                }
             )
         }
         .frame(height: 54)
@@ -138,18 +213,36 @@ private struct SegmentButton: View {
     let systemName: String
     let accessibilityLabel: String
     let repeats: Bool
-    let action: () -> Void
+    let action: (Bool) -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 17, weight: .semibold))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Group {
+            if repeats {
+                RepeatableRemoteButton(
+                    action: action
+                ) {
+                    segmentLabel
+                }
+            } else {
+                Button {
+                    action(false)
+                } label: {
+                    segmentLabel
+                }
+            }
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 24))
-        .buttonRepeatBehavior(repeats ? .enabled : .disabled)
         .foregroundStyle(.primary)
         .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var segmentLabel: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 17, weight: .semibold))
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity
+            )
     }
 }
 
@@ -327,9 +420,23 @@ struct RemoteView: View {
                 Group {
                     if mode == .touchpad &&
                         appModel.currentCapabilities.contains(.touchpad) {
-                        TouchpadView(onCommand: appModel.send)
+                        TouchpadView(
+                            onCommand: {
+                                appModel.send($0)
+                            }
+                        )
                     } else {
-                        DPadView(onCommand: appModel.send)
+                        DPadView(
+                            onCommand: {
+                                command,
+                                isRepeat in
+
+                                appModel.send(
+                                    command,
+                                    isRepeat: isRepeat
+                                )
+                            }
+                        )
                     }
                 }
                 .frame(width: dpadSize, height: dpadSize)
@@ -360,12 +467,26 @@ struct RemoteView: View {
 
                 if appModel.currentCapabilities.contains(.volume) ||
                     appModel.currentCapabilities.contains(.mute) {
-                    VolumePill(onCommand: appModel.send)
+                    VolumePill(
+                        onCommand: {
+                            command,
+                            isRepeat in
+
+                            appModel.send(
+                                command,
+                                isRepeat: isRepeat
+                            )
+                        }
+                    )
                 }
 
                 if appModel.currentCapabilities.contains(.playback) &&
                     shouldShowPlayback {
-                    PlaybackRow(onCommand: appModel.send)
+                    PlaybackRow(
+                        onCommand: {
+                            appModel.send($0)
+                        }
+                    )
                 }
 
                 if (appModel.currentCapabilities.contains(.keyboard) && shouldShowKeyboard) ||
@@ -416,8 +537,8 @@ struct RemoteView: View {
                 )
             }
             .scrollIndicators(.hidden)
-            .scrollDisabled(
-                !dynamicTypeSize.isAccessibilitySize
+            .scrollBounceBehavior(
+                .basedOnSize
             )
         }
         .background(Color.orbitBackground.ignoresSafeArea())
