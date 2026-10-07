@@ -60,7 +60,7 @@ private struct NoTVHomeView: View {
                         .font(.title2.bold())
 
                     Text(
-                        "Set up when you’re near your TV. Orbit works with Samsung, LG, and Google TV on the same Wi-Fi."
+                        "Set up when you’re near your TV. Orbit supports Samsung Tizen, LG webOS, and Google TV / Android TV on the same Wi-Fi."
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

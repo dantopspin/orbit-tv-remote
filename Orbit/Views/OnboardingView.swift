@@ -135,6 +135,10 @@ private struct LocalNetworkPage: View {
                     text: "Tap Allow so Orbit can find your TV."
                 )
                 FeatureLine(
+                    icon: "tv",
+                    text: "Supports Samsung Tizen, LG webOS, and Google TV / Android TV."
+                )
+                FeatureLine(
                     icon: "wifi",
                     text: "Your iPhone and TV need to be on the same Wi-Fi."
                 )
