@@ -289,6 +289,13 @@ struct PremiumView: View {
                             paywallContent(compact: true)
                                 .padding(.horizontal, 18)
                                 .padding(.vertical, 8)
+
+                            ScrollView {
+                                paywallContent(compact: true)
+                                    .padding(.horizontal, 18)
+                                    .padding(.vertical, 8)
+                            }
+                            .scrollBounceBehavior(.basedOnSize)
                         }
                         .frame(
                             width: proxy.size.width,
@@ -526,7 +533,8 @@ struct PremiumView: View {
                 : .footnote.weight(.semibold)
             )
             .foregroundStyle(.primary)
-            .frame(minHeight: compact ? 28 : 32)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
 
             Text(
                 compact
@@ -539,12 +547,20 @@ struct PremiumView: View {
             .lineLimit(compact ? 3 : 4)
 
             HStack(spacing: 18) {
-                NavigationLink("Terms") {
+                NavigationLink {
                     TermsOfServiceView()
+                } label: {
+                    Text("Terms")
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
 
-                NavigationLink("Privacy") {
+                NavigationLink {
                     PrivacyPolicyView()
+                } label: {
+                    Text("Privacy")
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
             }
             .font(compact ? .caption2 : .caption)
