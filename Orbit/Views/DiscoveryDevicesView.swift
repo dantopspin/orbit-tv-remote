@@ -61,14 +61,16 @@ struct DiscoveryView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.primary)
 
-                        Button("Open iPhone Settings") {
-                            guard let url = URL(
-                                string:
-                                    UIApplication.openSettingsURLString
-                            ) else {
-                                return
+                        if appModel.localNetworkAccessLikelyDenied {
+                            Button("Open iPhone Settings") {
+                                guard let url = URL(
+                                    string:
+                                        UIApplication.openSettingsURLString
+                                ) else {
+                                    return
+                                }
+                                UIApplication.shared.open(url)
                             }
-                            UIApplication.shared.open(url)
                         }
                     }
                 } else {
