@@ -52,6 +52,11 @@ struct SettingsView: View {
                     Button("Restore Purchases") {
                         Task {
                             await appModel.purchases.restore()
+
+                            if appModel.purchases.isPremium {
+                                appModel.resumePendingProSelection()
+                                dismiss()
+                            }
                         }
                     }
                     .disabled(appModel.purchases.isPurchasing)
@@ -300,6 +305,7 @@ struct PremiumView: View {
 
                         Task {
                             if await appModel.purchases.purchase(product) {
+                                appModel.resumePendingProSelection()
                                 dismiss()
                             }
                         }
@@ -378,6 +384,9 @@ struct PremiumView: View {
             }
             .task {
                 await appModel.purchases.refreshForForeground()
+            }
+            .onDisappear {
+                appModel.clearPendingProSelection()
             }
         }
     }

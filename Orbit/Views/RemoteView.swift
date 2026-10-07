@@ -334,6 +334,7 @@ struct RemoteView: View {
     @State private var showMore = false
     @State private var showKeyboard = false
     @State private var showAppsInputs = false
+    @State private var showFindTV = false
     @State private var appsInputsInitialSelection = 0
 
     var body: some View {
@@ -351,17 +352,44 @@ struct RemoteView: View {
                     header
 
                 if let message = appModel.connectionMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(
-                            dynamicTypeSize.isAccessibilitySize
-                            ? nil
-                            : 2
-                        )
-                        .frame(maxWidth: .infinity)
-                        .transition(.opacity)
+                    VStack(spacing: 8) {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(
+                                dynamicTypeSize.isAccessibilitySize
+                                ? nil
+                                : 3
+                            )
+                            .frame(maxWidth: .infinity)
+
+                        if appModel.connectionState == .unavailable {
+                            HStack(spacing: 10) {
+                                Button("Reconnect") {
+                                    appModel.connect()
+                                }
+
+                                Button("Find TV Again") {
+                                    showFindTV = true
+                                }
+
+                                if appModel.localNetworkAccessLikelyDenied {
+                                    Button("Settings") {
+                                        if let url = URL(
+                                            string:
+                                                UIApplication.openSettingsURLString
+                                        ) {
+                                            UIApplication.shared.open(url)
+                                        }
+                                    }
+                                }
+                            }
+                            .font(.caption.weight(.semibold))
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .transition(.opacity)
                 }
 
                 HStack {
@@ -550,6 +578,9 @@ struct RemoteView: View {
         }
         .sheet(isPresented: $showAppsInputs) {
             AppsInputsView(initialSelection: appsInputsInitialSelection)
+        }
+        .sheet(isPresented: $showFindTV) {
+            DiscoveryView()
         }
         .sheet(isPresented: pairingPresented) {
             TVPairingSheet()
