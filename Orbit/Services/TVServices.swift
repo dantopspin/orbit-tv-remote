@@ -2297,10 +2297,32 @@ final class AppModel {
                 self.lastControlError =
                     self.userFacingMessage(for: error)
                 self.connectingDeviceID = nil
-                self.scheduleReconnect(
-                    adapter: adapter,
-                    deviceID: deviceID
-                )
+
+                let shouldRetry: Bool
+
+                if let controlError = error as? TVControlError {
+                    switch controlError {
+                    case .unreachable, .transport:
+                        shouldRetry = true
+
+                    case .rejected(let status, _):
+                        shouldRetry = status.map { $0 >= 500 } ?? false
+
+                    case .permissionDenied,
+                         .unsupported,
+                         .invalidResponse:
+                        shouldRetry = false
+                    }
+                } else {
+                    shouldRetry = true
+                }
+
+                if shouldRetry {
+                    self.scheduleReconnect(
+                        adapter: adapter,
+                        deviceID: deviceID
+                    )
+                }
             }
         }
     }
