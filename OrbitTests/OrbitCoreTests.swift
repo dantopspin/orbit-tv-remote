@@ -593,6 +593,62 @@ final class DeviceStoreTests: XCTestCase {
         )
     }
 
+    func testReconcileIntoExistingCanonicalTVPreservesUserMetadata() {
+        clearDeviceDefaults()
+        defer { clearDeviceDefaults() }
+
+        let store = DeviceStore()
+        let stableID =
+            "androidtv-00112233445566778899aabbccddeeff"
+
+        let saved = TVDevice(
+            id: stableID,
+            name: "Mom's TV",
+            platform: .androidTV,
+            host: "192.168.1.20",
+            roomName: "Bedroom",
+            capabilities: [
+                .directionalNavigation,
+                .power
+            ]
+        )
+        store.addOrUpdate(saved)
+
+        let transient = TVDevice(
+            id: "androidtv-google tv streamer",
+            name: "Android TV",
+            platform: .androidTV,
+            host: "192.168.1.44"
+        )
+        store.addOrUpdate(transient)
+
+        let resolved = TVDevice(
+            id: stableID,
+            name: "Android TV",
+            platform: .androidTV,
+            host: "192.168.1.44",
+            capabilities: [
+                .directionalNavigation,
+                .power,
+                .volume
+            ]
+        )
+
+        store.reconcile(
+            oldDeviceID: transient.id,
+            with: resolved
+        )
+
+        XCTAssertEqual(store.devices.count, 1)
+        XCTAssertEqual(store.selectedDevice?.id, stableID)
+        XCTAssertEqual(store.selectedDevice?.name, "Mom's TV")
+        XCTAssertEqual(store.selectedDevice?.roomName, "Bedroom")
+        XCTAssertEqual(
+            store.selectedDevice?.host,
+            "192.168.1.44"
+        )
+    }
+
     func testRemovingFreeDevicePromotesNextSavedTV() {
         clearDeviceDefaults()
         defer { clearDeviceDefaults() }
@@ -820,7 +876,7 @@ final class RemoteCommandQueueTests: XCTestCase {
         )
     }
 
-    func testDiscreteBacklogIsBoundedWithoutDroppingNormalBurst() async {
+    func testDiscreteBacklogNeverDropsTaps() async {
         let queue = RemoteCommandQueue()
         let gate = AsyncGate()
         var delivered = 0
@@ -840,12 +896,12 @@ final class RemoteCommandQueueTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(accepted, 6)
+        XCTAssertEqual(accepted, 8)
 
         await gate.open()
         await queue.waitUntilIdle()
 
-        XCTAssertEqual(delivered, 6)
+        XCTAssertEqual(delivered, 8)
     }
 
     func testCancelPreventsQueuedGenerationFromRunning() async {
