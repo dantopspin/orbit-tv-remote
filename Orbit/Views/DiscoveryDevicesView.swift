@@ -4,10 +4,20 @@ import UIKit
 struct DiscoveryView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppSettings.Keys.tvSetupDeferred) private var tvSetupDeferred = true
+
+    private let showsCloseButton: Bool
+
     @State private var showManualAddress = false
     @State private var showPro = false
     @State private var manualAddress = ""
+    @State private var showStillLooking = false
+    @State private var selectingDeviceID: String?
+
+    init(showsCloseButton: Bool = false) {
+        self.showsCloseButton = showsCloseButton
+    }
 
     var body: some View {
         NavigationStack {
@@ -16,26 +26,33 @@ struct DiscoveryView: View {
                     Text("Find Your TV")
                         .font(.largeTitle.bold())
 
-                    Text("Make sure your TV is on and connected to the same Wi-Fi network as your iPhone.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                    Text(
+                        "Make sure your TV is on and connected to the same Wi-Fi as your iPhone."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
                 }
                 .padding(.top, 24)
                 .padding(.horizontal, 28)
 
                 if appModel.discovery.isSearching {
-                    ProgressView("Finding TVs…")
-                        .padding(.top, 16)
+                    ProgressView(
+                        showStillLooking
+                        ? "Still looking…"
+                        : "Finding TVs…"
+                    )
+                    .padding(.top, 16)
                 }
 
-                if appModel.discovery.devices.isEmpty, !appModel.discovery.isSearching {
+                if appModel.discovery.devices.isEmpty,
+                   !appModel.discovery.isSearching {
                     ContentUnavailableView {
-                        Label("No TVs found", systemImage: "tv")
+                        Label("No TVs found yet", systemImage: "tv")
                     } description: {
                         Text(
                             appModel.discovery.lastError ??
-                            "Make sure Local Network access is enabled. You can also connect directly using your TV’s local IP address."
+                            "Make sure the TV is on and using the same Wi-Fi as this iPhone, then scan again."
                         )
                     } actions: {
                         Button("Scan Again") {
@@ -44,8 +61,11 @@ struct DiscoveryView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.primary)
 
-                        Button("Open Settings") {
-                            guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                        Button("Open iPhone Settings") {
+                            guard let url = URL(
+                                string:
+                                    UIApplication.openSettingsURLString
+                            ) else {
                                 return
                             }
                             UIApplication.shared.open(url)
@@ -54,10 +74,21 @@ struct DiscoveryView: View {
                 } else {
                     List(appModel.discovery.devices) { device in
                         Button {
+                            guard selectingDeviceID == nil else {
+                                return
+                            }
+
+                            selectingDeviceID = device.id
+
                             Task {
-                                if await appModel.prepareSelection(
-                                    device
-                                ) {
+                                let accepted =
+                                    await appModel.prepareSelection(
+                                        device
+                                    )
+
+                                selectingDeviceID = nil
+
+                                if accepted {
                                     dismiss()
                                 } else {
                                     showPro = true
@@ -67,7 +98,10 @@ struct DiscoveryView: View {
                             HStack(spacing: 14) {
                                 Image(systemName: "tv")
 
-                                VStack(alignment: .leading, spacing: 3) {
+                                VStack(
+                                    alignment: .leading,
+                                    spacing: 3
+                                ) {
                                     Text(device.name)
                                         .font(.headline)
 
@@ -77,11 +111,20 @@ struct DiscoveryView: View {
                                 }
 
                                 Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(.tertiary)
+
+                                if selectingDeviceID == device.id {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "chevron.right")
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
                             .foregroundStyle(.primary)
                         }
+                        .disabled(
+                            selectingDeviceID != nil &&
+                            selectingDeviceID != device.id
+                        )
                     }
                     .listStyle(.insetGrouped)
                     .scrollContentBackground(.hidden)
@@ -95,9 +138,10 @@ struct DiscoveryView: View {
                     }
                     .foregroundStyle(.primary)
                     .font(.subheadline.weight(.semibold))
+                    .frame(minHeight: 44)
 
                     if appModel.currentDevice == nil {
-                        Button("Set Up Later") {
+                        Button("Later") {
                             tvSetupDeferred = true
                             dismiss()
                         }
@@ -109,70 +153,181 @@ struct DiscoveryView: View {
                 .padding(.bottom, 16)
             }
             .background(Color.orbitBackground)
+            .toolbar {
+                if showsCloseButton {
+                    ToolbarItem(
+                        placement: .cancellationAction
+                    ) {
+                        Button("Close") {
+                            dismiss()
+                        }
+                    }
+                }
+            }
             .task {
+                appModel.discovery.startScan()
+            }
+            .task(id: appModel.discovery.isSearching) {
+                showStillLooking = false
+
+                guard appModel.discovery.isSearching else {
+                    return
+                }
+
+                try? await Task.sleep(
+                    nanoseconds: 2_000_000_000
+                )
+
+                guard !Task.isCancelled,
+                      appModel.discovery.isSearching else {
+                    return
+                }
+
+                showStillLooking = true
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active,
+                      appModel.discovery.devices.isEmpty,
+                      !appModel.discovery.isSearching else {
+                    return
+                }
+
                 appModel.discovery.startScan()
             }
             .sheet(isPresented: $showPro) {
                 PremiumView()
             }
             .sheet(isPresented: $showManualAddress) {
-                NavigationStack {
-                    Form {
-                        Section("Manual connection") {
-                            TextField("TV IP address", text: $manualAddress)
-                                .keyboardType(.numbersAndPunctuation)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
+                manualConnectionSheet
+            }
+        }
+    }
 
-                            if appModel.discovery.isSearching {
-                                HStack(spacing: 10) {
-                                    ProgressView()
-                                    Text("Identifying TV…")
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+    private var manualConnectionSheet: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Form {
+                    Section("TV address") {
+                        TextField(
+                            "e.g. 192.168.1.24",
+                            text: $manualAddress
+                        )
+                        .keyboardType(.numbersAndPunctuation)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
 
-                            if let error = appModel.discovery.lastError {
-                                Text(error)
+                        Text(
+                            "This is the number your TV uses on your home Wi-Fi."
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                        if appModel.discovery.isSearching {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                Text("Checking this TV…")
                                     .foregroundStyle(.secondary)
                             }
                         }
-                    }
-                    .navigationTitle("Connect by IP")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") {
-                                showManualAddress = false
-                            }
-                        }
 
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Connect") {
-                                Task {
-                                    if let device = await appModel.discovery.addManualTV(host: manualAddress) {
-                                        if await appModel.prepareSelection(
-                                            device
-                                        ) {
-                                            showManualAddress = false
-                                            dismiss()
-                                        } else {
-                                            showManualAddress = false
-                                            showPro = true
-                                        }
-                                    }
-                                }
+                        if let error = appModel.discovery.lastError {
+                            Text(error)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Section {
+                        TVAddressHelpRow(
+                            brand: "Samsung",
+                            path:
+                                "Settings → Connection or General → Network → Network Status → IP Settings"
+                        )
+
+                        TVAddressHelpRow(
+                            brand: "LG",
+                            path:
+                                "Settings → Network → Wi-Fi Connection → your Wi-Fi network"
+                        )
+
+                        TVAddressHelpRow(
+                            brand: "Google TV",
+                            path:
+                                "Settings → Network & Internet → your Wi-Fi network"
+                        )
+                    } header: {
+                        Text("Where to find it")
+                    } footer: {
+                        Text(
+                            "Menu names can vary slightly by TV model."
+                        )
+                    }
+                }
+
+                Button("Connect") {
+                    Task {
+                        if let device =
+                            await appModel.discovery
+                                .addManualTV(
+                                    host: manualAddress
+                                ) {
+                            if await appModel.prepareSelection(
+                                device
+                            ) {
+                                showManualAddress = false
+                                dismiss()
+                            } else {
+                                showManualAddress = false
+                                showPro = true
                             }
-                            .disabled(
-                                appModel.discovery.isSearching ||
-                                manualAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            )
                         }
                     }
                 }
-                .presentationDetents([.medium])
+                .buttonStyle(OrbitPrimaryButtonStyle())
+                .disabled(
+                    appModel.discovery.isSearching ||
+                    manualAddress
+                        .trimmingCharacters(
+                            in: .whitespacesAndNewlines
+                        )
+                        .isEmpty
+                )
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+            }
+            .navigationTitle("Enter TV Address")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(
+                    placement: .cancellationAction
+                ) {
+                    Button("Cancel") {
+                        showManualAddress = false
+                    }
+                }
             }
         }
+        .presentationDetents([.large])
+    }
+}
+
+private struct TVAddressHelpRow: View {
+    let brand: String
+    let path: String
+
+    var body: some View {
+        VStack(
+            alignment: .leading,
+            spacing: 4
+        ) {
+            Text(brand)
+                .font(.headline)
+
+            Text(path)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
     }
 }
 
