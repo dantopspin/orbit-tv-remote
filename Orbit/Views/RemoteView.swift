@@ -352,30 +352,75 @@ struct RemoteView: View {
                     header
 
                 if let message = appModel.connectionMessage {
-                    VStack(spacing: 8) {
-                        Text(message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(
-                                dynamicTypeSize.isAccessibilitySize
-                                ? nil
-                                : 3
+                    VStack(spacing: 10) {
+                        if appModel.shouldShowTVApprovalHint {
+                            HStack(spacing: 12) {
+                                Image(systemName: "tv")
+                                    .font(.title3)
+
+                                Text(message)
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(
+                                        maxWidth: .infinity,
+                                        alignment: .leading
+                                    )
+                            }
+                            .padding(14)
+                            .background(
+                                RoundedRectangle(
+                                    cornerRadius: 16,
+                                    style: .continuous
+                                )
+                                .fill(Color.orbitSurface)
                             )
-                            .frame(maxWidth: .infinity)
+                            .overlay(
+                                RoundedRectangle(
+                                    cornerRadius: 16,
+                                    style: .continuous
+                                )
+                                .stroke(
+                                    Color.orbitSeparator,
+                                    lineWidth: 0.5
+                                )
+                            )
+                        } else {
+                            Text(message)
+                                .font(.subheadline)
+                                .foregroundStyle(
+                                    appModel.connectionState ==
+                                        .unavailable
+                                    ? Color.primary
+                                    : Color.secondary
+                                )
+                                .multilineTextAlignment(.center)
+                                .lineLimit(
+                                    dynamicTypeSize.isAccessibilitySize
+                                    ? nil
+                                    : 4
+                                )
+                                .frame(maxWidth: .infinity)
+                        }
 
                         if appModel.connectionState == .unavailable {
-                            HStack(spacing: 10) {
+                            VStack(spacing: 8) {
                                 Button("Reconnect") {
                                     appModel.connect()
                                 }
+                                .frame(
+                                    maxWidth: .infinity,
+                                    minHeight: 44
+                                )
 
                                 Button("Find TV Again") {
                                     showFindTV = true
                                 }
+                                .frame(
+                                    maxWidth: .infinity,
+                                    minHeight: 44
+                                )
 
                                 if appModel.localNetworkAccessLikelyDenied {
-                                    Button("Settings") {
+                                    Button("Open iPhone Settings") {
                                         if let url = URL(
                                             string:
                                                 UIApplication.openSettingsURLString
@@ -383,9 +428,13 @@ struct RemoteView: View {
                                             UIApplication.shared.open(url)
                                         }
                                     }
+                                    .frame(
+                                        maxWidth: .infinity,
+                                        minHeight: 44
+                                    )
                                 }
                             }
-                            .font(.caption.weight(.semibold))
+                            .font(.subheadline.weight(.semibold))
                             .buttonStyle(.bordered)
                         }
                     }
@@ -580,7 +629,7 @@ struct RemoteView: View {
             AppsInputsView(initialSelection: appsInputsInitialSelection)
         }
         .sheet(isPresented: $showFindTV) {
-            DiscoveryView()
+            DiscoveryView(showsCloseButton: true)
         }
         .sheet(isPresented: pairingPresented) {
             TVPairingSheet()
@@ -693,14 +742,14 @@ struct RemoteView: View {
             Button {
                 showMore = true
             } label: {
-                Image(systemName: "ellipsis")
+                Image(systemName: "gearshape")
                     .font(.headline)
                     .frame(width: 44, height: 44)
                     .background(Circle().fill(Color.orbitSurface))
             }
             .buttonStyle(OrbitPressStyle(cornerRadius: 22))
             .foregroundStyle(.primary)
-            .accessibilityLabel("More")
+            .accessibilityLabel("Menu")
         }
     }
 }
@@ -823,7 +872,7 @@ struct TVPairingSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .interactiveDismissDisabled(isSubmitting)
     }
 
@@ -922,8 +971,8 @@ struct KeyboardSheet: View {
                         send()
                     }
 
-                Text("Orbit sends text over your local network to the active TV input field.")
-                    .font(.footnote)
+                Text("First open a search box or text field on your TV, then type here.")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -970,7 +1019,8 @@ struct KeyboardSheet: View {
                 text = ""
                 Haptics.shared.tap()
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage =
+                    "Couldn’t send that text. Make sure the TV is connected and a text field is open."
             }
         }
     }
@@ -1004,9 +1054,25 @@ struct AppsInputsView: View {
                     ProgressView()
                         .frame(maxHeight: .infinity)
                 } else if selection == 0 {
-                    appsList
+                    if apps.isEmpty {
+                        emptyState(
+                            title: "No apps available",
+                            message:
+                                "Make sure the TV is connected, then try again."
+                        )
+                    } else {
+                        appsList
+                    }
                 } else {
-                    inputsList
+                    if inputs.isEmpty {
+                        emptyState(
+                            title: "No inputs available",
+                            message:
+                                "Make sure the TV is connected, then try again."
+                        )
+                    } else {
+                        inputsList
+                    }
                 }
             }
             .navigationTitle("Apps & Inputs")
@@ -1019,18 +1085,46 @@ struct AppsInputsView: View {
                 }
             }
             .task {
-                async let loadedApps = appModel.apps()
-                async let loadedInputs = appModel.inputs()
-
-                apps = await loadedApps
-                inputs = await loadedInputs
-                isLoading = false
+                await reload()
             }
         }
         .sheet(isPresented: $showPro) {
             PremiumView()
         }
         .presentationDetents([.medium, .large])
+    }
+
+    @ViewBuilder
+    private func emptyState(
+        title: String,
+        message: String
+    ) -> some View {
+        ContentUnavailableView {
+            Label(title, systemImage: "tv")
+        } description: {
+            Text(message)
+        } actions: {
+            Button("Try Again") {
+                Task {
+                    await reload()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.primary)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    @MainActor
+    private func reload() async {
+        isLoading = true
+
+        async let loadedApps = appModel.apps()
+        async let loadedInputs = appModel.inputs()
+
+        apps = await loadedApps
+        inputs = await loadedInputs
+        isLoading = false
     }
 
     private var currentDeviceID: String? {

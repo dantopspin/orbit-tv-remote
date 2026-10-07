@@ -19,6 +19,10 @@ struct SettingsView: View {
                     Toggle("Haptic Feedback", isOn: $hapticsEnabled)
                     Toggle("Keep Screen Awake", isOn: $keepScreenAwake)
                     Toggle("Dark Mode", isOn: $darkMode)
+                } footer: {
+                    Text(
+                        "When Dark Mode is off, Orbit follows your iPhone appearance."
+                    )
                 }
 
                 Section("Remote") {
@@ -225,7 +229,33 @@ private struct FAQView: View {
             }
 
             Section("Why can’t Orbit find my TV?") {
-                Text("Make sure the TV is powered on, connected to the same Wi-Fi network, and allows local control or mobile remote access in its settings.")
+                Text(
+                    "Make sure the TV is powered on and using the same Wi-Fi as your iPhone. If it still doesn’t appear, scan again or use Enter TV Address."
+                )
+            }
+
+            Section("Where do I find my TV address?") {
+                Text(
+                    "Samsung: Settings → Connection or General → Network → Network Status → IP Settings.\n\nLG: Settings → Network → Wi-Fi Connection → your Wi-Fi network.\n\nGoogle TV: Settings → Network & Internet → your Wi-Fi network.\n\nMenu names can vary by model."
+                )
+            }
+
+            Section("I pressed Deny on my Samsung TV") {
+                Text(
+                    "On the TV, open Settings → General (or General & Privacy) → External Device Manager → Device Connection Manager → Device List, remove Orbit, then return to Orbit, tap Reconnect, and choose Allow."
+                )
+            }
+
+            Section("Why can’t Orbit turn my TV on?") {
+                Text(
+                    "If Orbit can’t reach a TV that is off, turn it on with the TV’s own remote or power button. Orbit will reconnect automatically when the TV becomes available."
+                )
+            }
+
+            Section("I denied Local Network access") {
+                Text(
+                    "Open iPhone Settings → Orbit → Local Network and turn it on. Return to Orbit and it will search again automatically."
+                )
             }
         }
         .navigationTitle("FAQ")
@@ -236,6 +266,7 @@ struct PremiumView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedID = PurchaseManager.monthlyID
+    @State private var showReplaceConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -255,6 +286,33 @@ struct PremiumView: View {
                         Text("More TVs, your preferred layout, and the shortcuts you use most.")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
+                    }
+
+                    if let context =
+                        appModel.proGateContextMessage {
+                        VStack(spacing: 10) {
+                            Text(context)
+                                .font(.subheadline)
+                                .multilineTextAlignment(.center)
+
+                            if appModel
+                                .canReplaceFreeTVWithPendingCandidate {
+                                Button("Replace My Current TV") {
+                                    showReplaceConfirmation = true
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(
+                                cornerRadius: 16,
+                                style: .continuous
+                            )
+                            .fill(Color.orbitSurface)
+                        )
                     }
 
                     VStack(alignment: .leading, spacing: 18) {
@@ -344,11 +402,26 @@ struct PremiumView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
+
+                        if appModel.purchases.products.isEmpty,
+                           !appModel.purchases.isLoading {
+                            Button("Try Loading Prices Again") {
+                                Task {
+                                    await appModel.purchases.refresh()
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
 
                     Button("Restore Purchases") {
                         Task {
                             await appModel.purchases.restore()
+
+                            if appModel.purchases.isPremium {
+                                appModel.resumePendingProSelection()
+                                dismiss()
+                            }
                         }
                     }
                     .disabled(appModel.purchases.isPurchasing)
@@ -381,6 +454,24 @@ struct PremiumView: View {
                         dismiss()
                     }
                 }
+            }
+            .confirmationDialog(
+                "Replace your current Free TV?",
+                isPresented: $showReplaceConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Replace TV", role: .destructive) {
+                    if appModel
+                        .replaceFreeTVWithPendingCandidate() {
+                        dismiss()
+                    }
+                }
+
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "Orbit will forget your current Free TV and use \(appModel.pendingProCandidateName ?? "this TV") instead. You can add multiple TVs with Orbit Pro."
+                )
             }
             .task {
                 await appModel.purchases.refreshForForeground()

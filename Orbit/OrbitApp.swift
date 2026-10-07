@@ -9,7 +9,7 @@ struct OrbitApp: App {
         WindowGroup {
             RootView()
                 .environment(appModel)
-                .preferredColorScheme(darkMode ? .dark : .light)
+                .preferredColorScheme(darkMode ? .dark : nil)
         }
     }
 }

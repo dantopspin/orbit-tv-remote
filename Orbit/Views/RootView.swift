@@ -60,7 +60,7 @@ private struct NoTVHomeView: View {
                         .font(.title2.bold())
 
                     Text(
-                        "You can finish setup whenever you’re near a supported TV on the same Wi-Fi network."
+                        "Set up when you’re near your TV. Orbit works with Samsung, LG, and Google TV on the same Wi-Fi."
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -68,7 +68,7 @@ private struct NoTVHomeView: View {
                     .padding(.horizontal, 28)
                 }
 
-                Button("Find My TV") {
+                Button("Set Up My TV") {
                     showDiscovery = true
                 }
                 .buttonStyle(OrbitPrimaryButtonStyle())
@@ -99,7 +99,7 @@ private struct NoTVHomeView: View {
                 }
             }
             .sheet(isPresented: $showDiscovery) {
-                DiscoveryView()
+                DiscoveryView(showsCloseButton: true)
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()

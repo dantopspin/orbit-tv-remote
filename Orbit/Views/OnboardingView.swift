@@ -28,7 +28,7 @@ struct OnboardingFlowView: View {
             .padding(.bottom, 20)
 
             VStack(spacing: 10) {
-                Button(page == count - 1 ? "Find My TV" : "Continue") {
+                Button(page == count - 1 ? "Set Up My TV" : "Continue") {
                     Haptics.shared.selection()
 
                     if page < count - 1 {
@@ -43,7 +43,7 @@ struct OnboardingFlowView: View {
                 .buttonStyle(OrbitPrimaryButtonStyle())
 
                 if page == count - 1 {
-                    Button("Not Now") {
+                    Button("Later") {
                         Haptics.shared.selection()
                         tvSetupDeferred = true
                         onboardingCompleted = true
@@ -126,13 +126,22 @@ private struct KeyboardTutorialPage: View {
 private struct LocalNetworkPage: View {
     var body: some View {
         OnboardingPage(
-            title: "Works on your local network.",
-            subtitle: "Orbit connects directly to supported TVs over Wi-Fi."
+            title: "Connect to your TV",
+            subtitle: "Next, your iPhone will ask for Local Network access."
         ) {
             VStack(alignment: .leading, spacing: 20) {
-                FeatureLine(icon: "wifi", text: "Commands stay on your local network.")
-                FeatureLine(icon: "person.crop.circle.badge.xmark", text: "No account required.")
-                FeatureLine(icon: "shield", text: "No ads and no remote-command cloud relay.")
+                FeatureLine(
+                    icon: "checkmark.circle",
+                    text: "Tap Allow so Orbit can find your TV."
+                )
+                FeatureLine(
+                    icon: "wifi",
+                    text: "Your iPhone and TV need to be on the same Wi-Fi."
+                )
+                FeatureLine(
+                    icon: "lock.shield",
+                    text: "Remote commands stay on your Wi-Fi."
+                )
             }
             .frame(maxWidth: 310)
         }

@@ -157,9 +157,9 @@ enum TVConnectionState: Equatable, Sendable {
     var label: String {
         switch self {
         case .connecting: return "Connecting…"
-        case .connected: return "On"
-        case .off: return "Off"
-        case .unavailable: return "Not reachable"
+        case .connected: return "Connected"
+        case .off: return "TV is off"
+        case .unavailable: return "Not connected"
         }
     }
 }
@@ -198,8 +198,8 @@ enum RemoteControlMode: String, Codable, CaseIterable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .dpad: return "D-pad"
-        case .touchpad: return "Touchpad"
+        case .dpad: return "Buttons"
+        case .touchpad: return "Swipe"
         }
     }
 }
