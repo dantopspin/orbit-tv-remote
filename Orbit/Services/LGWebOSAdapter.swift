@@ -320,6 +320,9 @@ final class LGWebOSAdapter: NSObject, TVControlling {
             platform: .lgWebOS,
             deviceID: device.id
         )
+        var usedStoredClientKey =
+            credential?.clientKey != nil
+        var retriedWithoutStoredKey = false
 
         try await transport.sendJSONObject(
             registrationMessage(
@@ -420,8 +423,32 @@ final class LGWebOSAdapter: NSObject, TVControlling {
                 let message =
                     (root["error"] as? String) ??
                     "Pairing failed."
+                let lowered = message.lowercased()
+                let authorizationFailure =
+                    lowered.contains("401") ||
+                    lowered.contains("403") ||
+                    lowered.contains("unauthorized")
 
-                if message.contains("403") ||
+                if authorizationFailure,
+                   usedStoredClientKey,
+                   !retriedWithoutStoredKey {
+                    PairingCredentialStore.remove(
+                        platform: .lgWebOS,
+                        deviceID: device.id
+                    )
+                    usedStoredClientKey = false
+                    retriedWithoutStoredKey = true
+                    sawPrompt = false
+
+                    try await transport.sendJSONObject(
+                        registrationMessage(
+                            clientKey: nil
+                        )
+                    )
+                    continue
+                }
+
+                if authorizationFailure ||
                     sawPrompt {
                     throw TVControlError.permissionDenied(
                         "LG TV denied Orbit. Connect again and accept the pairing prompt on your TV."
