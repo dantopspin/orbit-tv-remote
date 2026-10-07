@@ -21,6 +21,22 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         eventEmitter.stream
     }
 
+    static func hasStoredCredential(
+        for device: TVDevice
+    ) -> Bool {
+        let candidateIDs =
+            [device.id] +
+            Array(device.discoveryAliases)
+
+        return candidateIDs.contains { deviceID in
+            (try? PairingCredentialStore.load(
+                LGCredential.self,
+                platform: .lgWebOS,
+                deviceID: deviceID
+            )) != nil
+        }
+    }
+
     init(device: TVDevice) {
         self.device = device
         self.trustDelegate = LGLocalTrustDelegate(
@@ -411,7 +427,7 @@ final class LGWebOSAdapter: NSObject, TVControlling {
                     eventEmitter?.yield(
                         .pairingRevoked(
                             message:
-                                "LG TV revoked Orbit’s remote access. Pair the TV again."
+                                "Your LG TV removed Orbit. Tap Reconnect, then choose Allow on the TV."
                         )
                     )
                 }
