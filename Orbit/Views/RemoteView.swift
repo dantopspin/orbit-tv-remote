@@ -394,6 +394,7 @@ struct RemoteView: View {
                                 )
                                 .multilineTextAlignment(.center)
                                 .lineLimit(
+                                    appModel.connectionState == .unavailable ||
                                     dynamicTypeSize.isAccessibilitySize
                                     ? nil
                                     : 4
@@ -406,36 +407,33 @@ struct RemoteView: View {
                                 Button("Reconnect") {
                                     appModel.connect()
                                 }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.primary)
                                 .frame(
                                     maxWidth: .infinity,
                                     minHeight: 44
                                 )
 
-                                Button("Find TV Again") {
-                                    showFindTV = true
-                                }
-                                .frame(
-                                    maxWidth: .infinity,
-                                    minHeight: 44
-                                )
+                                HStack(spacing: 16) {
+                                    Button("Find TV Again") {
+                                        showFindTV = true
+                                    }
 
-                                if appModel.localNetworkAccessLikelyDenied {
-                                    Button("Open iPhone Settings") {
-                                        if let url = URL(
-                                            string:
-                                                UIApplication.openSettingsURLString
-                                        ) {
-                                            UIApplication.shared.open(url)
+                                    if appModel.localNetworkAccessLikelyDenied {
+                                        Button("iPhone Settings") {
+                                            if let url = URL(
+                                                string:
+                                                    UIApplication.openSettingsURLString
+                                            ) {
+                                                UIApplication.shared.open(url)
+                                            }
                                         }
                                     }
-                                    .frame(
-                                        maxWidth: .infinity,
-                                        minHeight: 44
-                                    )
                                 }
+                                .font(.subheadline.weight(.semibold))
+                                .buttonStyle(.plain)
+                                .frame(minHeight: 44)
                             }
-                            .font(.subheadline.weight(.semibold))
-                            .buttonStyle(.bordered)
                         }
                     }
                     .transition(.opacity)
@@ -1439,6 +1437,17 @@ struct MoreMenuSheet: View {
 
                 Button("Cancel", role: .cancel) {}
             }
+        }
+        .onChange(of: appModel.currentDevice?.id) {
+            oldValue,
+            newValue in
+
+            guard oldValue != newValue,
+                  newValue != nil else {
+                return
+            }
+
+            dismiss()
         }
         .presentationDetents([.medium, .large])
     }

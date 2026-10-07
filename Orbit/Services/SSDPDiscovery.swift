@@ -188,53 +188,32 @@ enum SSDPScanner {
             )
         }
 
-        var multicastSendSucceeded = false
-
-        for searchTarget in ["roku:ecp", "ssdp:all"] {
-            let request = [
-                "M-SEARCH * HTTP/1.1",
-                "HOST: \(multicastAddress):\(multicastPort)",
-                "MAN: \"ssdp:discover\"",
-                "MX: 1",
-                "ST: \(searchTarget)",
-                "",
-                ""
-            ].joined(separator: "\r\n")
-
-            guard let data = request.data(using: .utf8) else { continue }
-
-            let sent: Int = data.withUnsafeBytes { bytes in
-                withUnsafePointer(
-                    to: &destination
-                ) { pointer in
-                    pointer.withMemoryRebound(
-                        to: sockaddr.self,
-                        capacity: 1
-                    ) { address in
-                        Darwin.sendto(
-                            socketFD,
-                            bytes.baseAddress,
-                            bytes.count,
-                            0,
-                            address,
-                            socklen_t(
-                                MemoryLayout<sockaddr_in>.size
-                            )
-                        )
-                    }
-                }
-            }
-
-            if sent == data.count {
-                multicastSendSucceeded = true
-            }
-        }
+        var multicastSendSucceeded =
+            sendSearches(
+                socketFD: socketFD,
+                destination: &destination
+            )
 
         let deadline = Date().addingTimeInterval(timeout)
+        var nextSearchDate =
+            Date().addingTimeInterval(1.5)
         var responses: [String: SSDPResponse] = [:]
         var buffer = [UInt8](repeating: 0, count: 65_535)
 
         while Date() < deadline {
+            let now = Date()
+
+            if now >= nextSearchDate {
+                multicastSendSucceeded =
+                    sendSearches(
+                        socketFD: socketFD,
+                        destination: &destination
+                    ) ||
+                    multicastSendSucceeded
+
+                nextSearchDate =
+                    now.addingTimeInterval(1.5)
+            }
             var source = sockaddr_storage()
             var sourceLength = socklen_t(MemoryLayout<sockaddr_storage>.size)
 
@@ -281,4 +260,63 @@ enum SSDPScanner {
         )
     }
 
+    private static func sendSearches(
+        socketFD: Int32,
+        destination: inout sockaddr_in
+    ) -> Bool {
+        var anySendSucceeded = false
+
+        for searchTarget in [
+            "roku:ecp",
+            "ssdp:all"
+        ] {
+            let request = [
+                "M-SEARCH * HTTP/1.1",
+                "HOST: \(multicastAddress):\(multicastPort)",
+                "MAN: \"ssdp:discover\"",
+                "MX: 1",
+                "ST: \(searchTarget)",
+                "",
+                ""
+            ].joined(separator: "\r\n")
+
+            guard let data =
+                    request.data(
+                        using: .utf8
+                    ) else {
+                continue
+            }
+
+            let sent: Int =
+                data.withUnsafeBytes { bytes in
+                    withUnsafePointer(
+                        to: &destination
+                    ) { pointer in
+                        pointer.withMemoryRebound(
+                            to: sockaddr.self,
+                            capacity: 1
+                        ) { address in
+                            Darwin.sendto(
+                                socketFD,
+                                bytes.baseAddress,
+                                bytes.count,
+                                0,
+                                address,
+                                socklen_t(
+                                    MemoryLayout<
+                                        sockaddr_in
+                                    >.size
+                                )
+                            )
+                        }
+                    }
+                }
+
+            if sent == data.count {
+                anySendSucceeded = true
+            }
+        }
+
+        return anySendSucceeded
+    }
 }
