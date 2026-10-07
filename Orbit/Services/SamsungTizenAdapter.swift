@@ -20,6 +20,22 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
         eventEmitter.stream
     }
 
+    static func hasStoredCredential(
+        for device: TVDevice
+    ) -> Bool {
+        let candidateIDs =
+            [device.id] +
+            Array(device.discoveryAliases)
+
+        return candidateIDs.contains { deviceID in
+            (try? PairingCredentialStore.load(
+                SamsungCredential.self,
+                platform: .samsung,
+                deviceID: deviceID
+            )) != nil
+        }
+    }
+
     init(device: TVDevice) {
         self.device = device
 
@@ -115,7 +131,7 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
 
             if envelope.event == "ms.channel.unauthorized" {
                 throw TVControlError.permissionDenied(
-                    "Samsung TV denied Orbit. Remove Orbit from the TV’s device connection list, then connect again and choose Allow."
+                    "Orbit was blocked on your Samsung TV. On the TV, open Settings → General (or General & Privacy) → External Device Manager → Device Connection Manager → Device List, remove Orbit, then tap Reconnect and choose Allow."
                 )
             }
 
@@ -154,7 +170,7 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
                 eventEmitter?.yield(
                     .pairingRevoked(
                         message:
-                            "Samsung TV revoked Orbit’s remote access. Pair the TV again."
+                            "Your Samsung TV removed Orbit. Tap Reconnect, then choose Allow on the TV."
                     )
                 )
             }
