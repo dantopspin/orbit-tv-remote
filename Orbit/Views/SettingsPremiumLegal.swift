@@ -229,7 +229,33 @@ private struct FAQView: View {
             }
 
             Section("Why can’t Orbit find my TV?") {
-                Text("Make sure the TV is powered on, connected to the same Wi-Fi network, and allows local control or mobile remote access in its settings.")
+                Text(
+                    "Make sure the TV is powered on and using the same Wi-Fi as your iPhone. If it still doesn’t appear, scan again or use Enter TV Address."
+                )
+            }
+
+            Section("Where do I find my TV address?") {
+                Text(
+                    "Samsung: Settings → Connection or General → Network → Network Status → IP Settings.\n\nLG: Settings → Network → Wi-Fi Connection → your Wi-Fi network.\n\nGoogle TV: Settings → Network & Internet → your Wi-Fi network.\n\nMenu names can vary by model."
+                )
+            }
+
+            Section("I pressed Deny on my Samsung TV") {
+                Text(
+                    "On the TV, open Settings → General (or General & Privacy) → External Device Manager → Device Connection Manager → Device List, remove Orbit, then return to Orbit, tap Reconnect, and choose Allow."
+                )
+            }
+
+            Section("Why can’t Orbit turn my TV on?") {
+                Text(
+                    "If Orbit can’t reach a TV that is off, turn it on with the TV’s own remote or power button. Orbit will reconnect automatically when the TV becomes available."
+                )
+            }
+
+            Section("I denied Local Network access") {
+                Text(
+                    "Open iPhone Settings → Orbit → Local Network and turn it on. Return to Orbit and it will search again automatically."
+                )
             }
         }
         .navigationTitle("FAQ")
