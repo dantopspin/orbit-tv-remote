@@ -265,187 +265,38 @@ private struct FAQView: View {
 struct PremiumView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     @State private var selectedID = PurchaseManager.monthlyID
     @State private var showReplaceConfirmation = false
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    OrbitMark(size: 66)
-                        .padding(.top, 12)
-
-                    VStack(spacing: 7) {
-                        Text("Orbit Pro")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-
-                        Text("Make Orbit yours.")
-                            .font(.largeTitle.bold())
-
-                        Text("More TVs, your preferred layout, and the shortcuts you use most.")
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    ScrollView {
+                        paywallContent(compact: true)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 10)
                     }
+                } else {
+                    GeometryReader { proxy in
+                        ViewThatFits(in: .vertical) {
+                            paywallContent(compact: false)
+                                .padding(.horizontal, 22)
+                                .padding(.vertical, 12)
 
-                    if let context =
-                        appModel.proGateContextMessage {
-                        VStack(spacing: 10) {
-                            Text(context)
-                                .font(.subheadline)
-                                .multilineTextAlignment(.center)
-
-                            if appModel
-                                .canReplaceFreeTVWithPendingCandidate {
-                                Button("Replace My Current TV") {
-                                    showReplaceConfirmation = true
-                                }
-                                .font(.subheadline.weight(.semibold))
-                                .buttonStyle(.bordered)
-                            }
+                            paywallContent(compact: true)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 8)
                         }
-                        .padding(14)
-                        .frame(maxWidth: .infinity)
-                        .background(
-                            RoundedRectangle(
-                                cornerRadius: 16,
-                                style: .continuous
-                            )
-                            .fill(Color.orbitSurface)
+                        .frame(
+                            width: proxy.size.width,
+                            height: proxy.size.height,
+                            alignment: .top
                         )
                     }
-
-                    VStack(alignment: .leading, spacing: 18) {
-                        PremiumFeature(
-                            icon: "tv.and.mediabox",
-                            title: "Multiple TVs & Rooms",
-                            detail: "Keep every TV ready and label each one by room."
-                        )
-
-                        PremiumFeature(
-                            icon: "slider.horizontal.3",
-                            title: "Custom Remote",
-                            detail: "Choose your default control mode and keep only the controls you use."
-                        )
-
-                        PremiumFeature(
-                            icon: "star",
-                            title: "Favorites",
-                            detail: "Keep favorite apps and inputs one tap away."
-                        )
-                    }
-
-                    Text("The complete remote stays available on Free.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(spacing: 10) {
-                        planRow(
-                            id: PurchaseManager.weeklyID,
-                            badge: nil
-                        )
-
-                        planRow(
-                            id: PurchaseManager.monthlyID,
-                            badge: "Great Value"
-                        )
-                    }
-
-                    Button(
-                        selectedID == PurchaseManager.monthlyID
-                        ? "Continue with Monthly"
-                        : "Continue with Weekly"
-                    ) {
-                        guard let product = appModel.purchases.product(id: selectedID) else {
-                            return
-                        }
-
-                        Task {
-                            if await appModel.purchases.purchase(product) {
-                                appModel.resumePendingProSelection()
-                                dismiss()
-                            }
-                        }
-                    }
-                    .buttonStyle(OrbitPrimaryButtonStyle())
-                    .disabled(
-                        appModel.purchases.product(id: selectedID) == nil ||
-                        appModel.purchases.isPurchasing
-                    )
-                    .overlay {
-                        if appModel.purchases.isPurchasing {
-                            ProgressView()
-                                .tint(Color(uiColor: .systemBackground))
-                        }
-                    }
-
-                    Text("Cancel anytime • Managed through Apple")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if appModel.purchases.isLoading &&
-                        appModel.purchases.products.isEmpty {
-                        ProgressView("Loading plans…")
-                            .font(.footnote)
-                    }
-
-                    if appModel.purchases.purchasePending {
-                        Text("Purchase pending approval. Orbit Pro will activate automatically when Apple completes it.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-
-                    if let error = appModel.purchases.errorMessage {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-
-                        if appModel.purchases.products.isEmpty,
-                           !appModel.purchases.isLoading {
-                            Button("Try Loading Prices Again") {
-                                Task {
-                                    await appModel.purchases.refresh()
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                    }
-
-                    Button("Restore Purchases") {
-                        Task {
-                            await appModel.purchases.restore()
-
-                            if appModel.purchases.isPremium {
-                                appModel.resumePendingProSelection()
-                                dismiss()
-                            }
-                        }
-                    }
-                    .disabled(appModel.purchases.isPurchasing)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                    Text("Payment is charged to your Apple ID at confirmation. Subscriptions renew automatically until canceled at least 24 hours before the end of the current period. You can manage or cancel in your App Store subscription settings.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-
-                    HStack(spacing: 16) {
-                        NavigationLink("Terms") {
-                            TermsOfServiceView()
-                        }
-
-                        NavigationLink("Privacy") {
-                            PrivacyPolicyView()
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
-                .padding(22)
             }
             .background(Color.orbitBackground)
             .toolbar {
@@ -483,33 +334,324 @@ struct PremiumView: View {
     }
 
     @ViewBuilder
+    private func paywallContent(
+        compact: Bool
+    ) -> some View {
+        VStack(spacing: compact ? 7 : 12) {
+            VStack(spacing: compact ? 2 : 4) {
+                OrbitMark(
+                    size: compact ? 36 : 52
+                )
+                .padding(.bottom, compact ? 1 : 3)
+
+                Text("Orbit Pro")
+                    .font(
+                        compact
+                        ? .caption.weight(.semibold)
+                        : .subheadline.weight(.semibold)
+                    )
+                    .foregroundStyle(.secondary)
+
+                Text("Make Orbit yours.")
+                    .font(
+                        compact
+                        ? .title2.bold()
+                        : .title.bold()
+                    )
+                    .multilineTextAlignment(.center)
+
+                Text(
+                    compact
+                    ? "More TVs, custom controls, favorite shortcuts."
+                    : "More TVs, your preferred layout, and the shortcuts you use most."
+                )
+                .font(compact ? .caption : .subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(compact ? 1 : 2)
+            }
+
+            if let context =
+                appModel.proGateContextMessage {
+                VStack(spacing: compact ? 5 : 8) {
+                    Text(context)
+                        .font(compact ? .caption : .subheadline)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(compact ? 2 : 3)
+
+                    if appModel
+                        .canReplaceFreeTVWithPendingCandidate {
+                        Button("Replace My Current TV") {
+                            showReplaceConfirmation = true
+                        }
+                        .font(
+                            compact
+                            ? .caption.weight(.semibold)
+                            : .subheadline.weight(.semibold)
+                        )
+                        .buttonStyle(.bordered)
+                        .controlSize(
+                            compact ? .small : .regular
+                        )
+                    }
+                }
+                .padding(compact ? 8 : 12)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(
+                        cornerRadius: compact ? 12 : 16,
+                        style: .continuous
+                    )
+                    .fill(Color.orbitSurface)
+                )
+            }
+
+            VStack(
+                alignment: .leading,
+                spacing: compact ? 5 : 11
+            ) {
+                PremiumFeature(
+                    icon: "tv.and.mediabox",
+                    title: "Multiple TVs & Rooms",
+                    detail:
+                        "Keep every TV ready and label each one by room.",
+                    compact: compact
+                )
+
+                PremiumFeature(
+                    icon: "slider.horizontal.3",
+                    title: "Custom Remote",
+                    detail:
+                        "Choose your default control mode and keep only the controls you use.",
+                    compact: compact
+                )
+
+                PremiumFeature(
+                    icon: "star",
+                    title: "Favorites",
+                    detail:
+                        "Keep favorite apps and inputs one tap away.",
+                    compact: compact
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(
+                "The complete remote stays available on Free."
+            )
+            .font(compact ? .caption2 : .footnote)
+            .foregroundStyle(.secondary)
+            .frame(
+                maxWidth: .infinity,
+                alignment: .leading
+            )
+
+            VStack(spacing: compact ? 6 : 8) {
+                planRow(
+                    id: PurchaseManager.weeklyID,
+                    badge: nil,
+                    compact: compact
+                )
+
+                planRow(
+                    id: PurchaseManager.monthlyID,
+                    badge: "Great Value",
+                    compact: compact
+                )
+            }
+
+            Button(
+                selectedID == PurchaseManager.monthlyID
+                ? "Continue with Monthly"
+                : "Continue with Weekly"
+            ) {
+                guard let product =
+                        appModel.purchases.product(
+                            id: selectedID
+                        ) else {
+                    return
+                }
+
+                Task {
+                    if await appModel.purchases.purchase(
+                        product
+                    ) {
+                        appModel.resumePendingProSelection()
+                        dismiss()
+                    }
+                }
+            }
+            .buttonStyle(
+                OrbitPrimaryButtonStyle(
+                    height: compact ? 48 : 52
+                )
+            )
+            .disabled(
+                appModel.purchases.product(
+                    id: selectedID
+                ) == nil ||
+                appModel.purchases.isPurchasing
+            )
+            .overlay {
+                if appModel.purchases.isPurchasing {
+                    ProgressView()
+                        .tint(
+                            Color(
+                                uiColor: .systemBackground
+                            )
+                        )
+                }
+            }
+
+            Text("Cancel anytime • Managed through Apple")
+                .font(compact ? .caption2 : .caption)
+                .foregroundStyle(.secondary)
+
+            purchaseStatus(compact: compact)
+
+            Button("Restore Purchases") {
+                Task {
+                    await appModel.purchases.restore()
+
+                    if appModel.purchases.isPremium {
+                        appModel.resumePendingProSelection()
+                        dismiss()
+                    }
+                }
+            }
+            .disabled(appModel.purchases.isPurchasing)
+            .font(
+                compact
+                ? .caption.weight(.semibold)
+                : .footnote.weight(.semibold)
+            )
+            .foregroundStyle(.primary)
+            .frame(minHeight: compact ? 28 : 32)
+
+            Text(
+                compact
+                ? "Charged to your Apple ID. Renews automatically unless canceled at least 24 hours before renewal. Manage in App Store Subscriptions."
+                : "Payment is charged to your Apple ID at confirmation. Subscriptions renew automatically until canceled at least 24 hours before the end of the current period. Manage or cancel in App Store Subscriptions."
+            )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .lineLimit(compact ? 3 : 4)
+
+            HStack(spacing: 18) {
+                NavigationLink("Terms") {
+                    TermsOfServiceView()
+                }
+
+                NavigationLink("Privacy") {
+                    PrivacyPolicyView()
+                }
+            }
+            .font(compact ? .caption2 : .caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func purchaseStatus(
+        compact: Bool
+    ) -> some View {
+        if appModel.purchases.isLoading &&
+            appModel.purchases.products.isEmpty {
+            ProgressView("Loading plans…")
+                .font(.caption)
+        }
+
+        if appModel.purchases.purchasePending {
+            Text(
+                compact
+                ? "Purchase pending Apple approval."
+                : "Purchase pending approval. Orbit Pro will activate automatically when Apple completes it."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .lineLimit(compact ? 1 : 2)
+        }
+
+        if let error =
+            appModel.purchases.errorMessage {
+            VStack(spacing: 4) {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(compact ? 2 : 3)
+
+                if appModel.purchases.products.isEmpty,
+                   !appModel.purchases.isLoading {
+                    Button("Try Loading Prices Again") {
+                        Task {
+                            await appModel.purchases.refresh()
+                        }
+                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private func planRow(
         id: String,
-        badge: String?
+        badge: String?,
+        compact: Bool
     ) -> some View {
-        let product = appModel.purchases.product(id: id)
+        let product =
+            appModel.purchases.product(id: id)
 
         Button {
             selectedID = id
             Haptics.shared.selection()
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: selectedID == id ? "largecircle.fill.circle" : "circle")
-                    .font(.title3)
+            HStack(spacing: compact ? 9 : 12) {
+                Image(
+                    systemName:
+                        selectedID == id
+                        ? "largecircle.fill.circle"
+                        : "circle"
+                )
+                .font(compact ? .body : .title3)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(id == PurchaseManager.weeklyID ? "Weekly" : "Monthly")
-                        .font(.headline)
+                VStack(
+                    alignment: .leading,
+                    spacing: compact ? 0 : 2
+                ) {
+                    Text(
+                        id == PurchaseManager.weeklyID
+                        ? "Weekly"
+                        : "Monthly"
+                    )
+                    .font(
+                        compact
+                        ? .subheadline.weight(.semibold)
+                        : .headline
+                    )
 
                     if let product {
                         Text(
                             "\(product.displayPrice) / \(id == PurchaseManager.weeklyID ? "week" : "month")"
                         )
-                        .font(.subheadline)
+                        .font(
+                            compact
+                            ? .caption
+                            : .subheadline
+                        )
                         .foregroundStyle(.secondary)
                     } else {
                         Text("Loading price…")
-                            .font(.subheadline)
+                            .font(
+                                compact
+                                ? .caption
+                                : .subheadline
+                            )
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -518,28 +660,70 @@ struct PremiumView: View {
 
                 if let badge {
                     Text(badge)
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                        .font(
+                            compact
+                            ? .caption2.weight(.semibold)
+                            : .caption.weight(.semibold)
+                        )
+                        .padding(
+                            .horizontal,
+                            compact ? 8 : 10
+                        )
+                        .padding(
+                            .vertical,
+                            compact ? 4 : 6
+                        )
+                        .background(
+                            Capsule()
+                                .fill(
+                                    Color.primary.opacity(
+                                        0.08
+                                    )
+                                )
+                        )
                 }
             }
-            .padding(16)
+            .padding(
+                .horizontal,
+                compact ? 13 : 16
+            )
+            .padding(
+                .vertical,
+                compact ? 9 : 13
+            )
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.orbitSurface)
+                RoundedRectangle(
+                    cornerRadius: compact ? 15 : 18,
+                    style: .continuous
+                )
+                .fill(Color.orbitSurface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(
-                        selectedID == id ? Color.primary : Color.orbitSeparator,
-                        lineWidth: selectedID == id ? 1.5 : 0.5
-                    )
+                RoundedRectangle(
+                    cornerRadius: compact ? 15 : 18,
+                    style: .continuous
+                )
+                .stroke(
+                    selectedID == id
+                    ? Color.primary
+                    : Color.orbitSeparator,
+                    lineWidth:
+                        selectedID == id
+                        ? 1.5
+                        : 0.5
+                )
             )
         }
-        .buttonStyle(OrbitPressStyle(cornerRadius: 18))
+        .buttonStyle(
+            OrbitPressStyle(
+                cornerRadius: compact ? 15 : 18
+            )
+        )
         .foregroundStyle(.primary)
-        .disabled(product == nil || appModel.purchases.isPurchasing)
+        .disabled(
+            product == nil ||
+            appModel.purchases.isPurchasing
+        )
     }
 }
 
@@ -547,21 +731,40 @@ private struct PremiumFeature: View {
     let icon: String
     let title: String
     let detail: String
+    let compact: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(
+            alignment: compact ? .center : .top,
+            spacing: compact ? 10 : 14
+        ) {
             Image(systemName: icon)
                 .frame(width: 24)
-                .font(.headline)
+                .font(
+                    compact
+                    ? .subheadline
+                    : .headline
+                )
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(
+                alignment: .leading,
+                spacing: 2
+            ) {
                 Text(title)
-                    .font(.headline)
+                    .font(
+                        compact
+                        ? .subheadline.weight(.semibold)
+                        : .headline
+                    )
 
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                if !compact {
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
+
+            Spacer(minLength: 0)
         }
     }
 }
