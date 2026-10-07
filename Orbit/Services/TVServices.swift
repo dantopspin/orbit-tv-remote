@@ -1844,6 +1844,10 @@ final class AppModel {
         return "Free includes one TV. Upgrade to add \(candidate.name), or replace your current TV for free."
     }
 
+    var pendingProCandidateName: String? {
+        pendingProCandidate?.name
+    }
+
     var canReplaceFreeTVWithPendingCandidate: Bool {
         !purchases.isPremium &&
         pendingProCandidate != nil &&
