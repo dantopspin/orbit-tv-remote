@@ -198,8 +198,8 @@ enum RemoteControlMode: String, Codable, CaseIterable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .dpad: return "D-pad"
-        case .touchpad: return "Touchpad"
+        case .dpad: return "Buttons"
+        case .touchpad: return "Swipe"
         }
     }
 }
