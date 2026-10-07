@@ -212,14 +212,13 @@ struct DevicesView: View {
 
                 Section {
                     Button {
-                        if appModel.purchases.isPremium ||
-                            appModel.deviceStore.availableDevices.isEmpty {
-                            showAddTV = true
-                        } else {
-                            showPremium = true
-                        }
+                        // Free users must be able to find their existing TV
+                        // again after DHCP/IP changes. The one-TV rule is
+                        // enforced when a candidate is identified/selected,
+                        // not at the entrance to discovery.
+                        showAddTV = true
                     } label: {
-                        Label("Add TV", systemImage: "plus")
+                        Label("Add or Find TV", systemImage: "plus")
                     }
 
                     Button {
