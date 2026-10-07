@@ -2122,7 +2122,10 @@ final class AppModel {
 
     func dismissProGate() {
         proGateRequested = false
+        clearPendingProSelection()
+    }
 
+    func clearPendingProSelection() {
         if !purchases.isPremium {
             pendingProCandidate = nil
         }
