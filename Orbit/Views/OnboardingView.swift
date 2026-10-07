@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OnboardingFlowView: View {
     @AppStorage(AppSettings.Keys.onboardingCompleted) private var onboardingCompleted = false
+    @AppStorage(AppSettings.Keys.tvSetupDeferred) private var tvSetupDeferred = false
     @State private var page = 0
 
     private let count = 4
@@ -26,18 +27,35 @@ struct OnboardingFlowView: View {
             }
             .padding(.bottom, 20)
 
-            Button(page == count - 1 ? "Find My TV" : "Continue") {
-                Haptics.shared.selection()
+            VStack(spacing: 10) {
+                Button(page == count - 1 ? "Find My TV" : "Continue") {
+                    Haptics.shared.selection()
 
-                if page < count - 1 {
-                    withAnimation(.easeInOut(duration: 0.22)) {
-                        page += 1
+                    if page < count - 1 {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            page += 1
+                        }
+                    } else {
+                        tvSetupDeferred = false
+                        onboardingCompleted = true
                     }
-                } else {
-                    onboardingCompleted = true
+                }
+                .buttonStyle(OrbitPrimaryButtonStyle())
+
+                if page == count - 1 {
+                    Button("Not Now") {
+                        Haptics.shared.selection()
+                        tvSetupDeferred = true
+                        onboardingCompleted = true
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(minHeight: 44)
+                    .accessibilityHint(
+                        "Finish setup later from Orbit."
+                    )
                 }
             }
-            .buttonStyle(OrbitPrimaryButtonStyle())
             .padding(.horizontal, 22)
             .padding(.bottom, 18)
         }
