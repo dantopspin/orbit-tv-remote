@@ -2,7 +2,7 @@ import SwiftUI
 
 struct OnboardingFlowView: View {
     @AppStorage(AppSettings.Keys.onboardingCompleted) private var onboardingCompleted = false
-    @AppStorage(AppSettings.Keys.tvSetupDeferred) private var tvSetupDeferred = false
+    @AppStorage(AppSettings.Keys.tvSetupDeferred) private var tvSetupDeferred = true
     @State private var page = 0
 
     private let count = 4
