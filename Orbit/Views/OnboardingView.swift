@@ -206,15 +206,60 @@ struct OrbitMark: View {
     var size: CGFloat = 92
 
     var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Color.primary, lineWidth: max(5, size * 0.075))
-                .frame(width: size, height: size)
+        Canvas { context, canvasSize in
+            let diameter = min(
+                canvasSize.width,
+                canvasSize.height
+            )
+            let center = CGPoint(
+                x: canvasSize.width / 2,
+                y: canvasSize.height / 2
+            )
+            let orbitRadius = diameter * 0.42
+            let orbitWidth = diameter * 0.155
+            let centerDiameter = diameter * 0.335
 
-            Circle()
-                .fill(Color.primary)
-                .frame(width: size * 0.18, height: size * 0.18)
+            let centerRect = CGRect(
+                x: center.x - centerDiameter / 2,
+                y: center.y - centerDiameter / 2,
+                width: centerDiameter,
+                height: centerDiameter
+            )
+
+            context.fill(
+                Path(ellipseIn: centerRect),
+                with: .color(.primary)
+            )
+
+            for quarterTurn in 0..<4 {
+                var segment = Path()
+                let rotation = Double(
+                    quarterTurn * 90
+                )
+
+                segment.addArc(
+                    center: center,
+                    radius: orbitRadius,
+                    startAngle: .degrees(
+                        -119 + rotation
+                    ),
+                    endAngle: .degrees(
+                        -61 + rotation
+                    ),
+                    clockwise: false
+                )
+
+                context.stroke(
+                    segment,
+                    with: .color(.primary),
+                    style: StrokeStyle(
+                        lineWidth: orbitWidth,
+                        lineCap: .round
+                    )
+                )
+            }
         }
+        .frame(width: size, height: size)
         .accessibilityHidden(true)
     }
 }
