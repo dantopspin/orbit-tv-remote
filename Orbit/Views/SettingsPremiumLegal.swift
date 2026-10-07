@@ -385,6 +385,9 @@ struct PremiumView: View {
             .task {
                 await appModel.purchases.refreshForForeground()
             }
+            .onDisappear {
+                appModel.clearPendingProSelection()
+            }
         }
     }
 
