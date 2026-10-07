@@ -46,13 +46,35 @@ final class SamsungTizenAdapter: NSObject, TVControlling {
 
         let metadata = try await fetchMetadata()
         self.metadata = metadata
+
+        let previousDeviceID = device.id
         device = resolvedDevice(from: metadata)
 
-        let storedCredential = try? PairingCredentialStore.load(
+        var storedCredential = try? PairingCredentialStore.load(
             SamsungCredential.self,
             platform: .samsung,
             deviceID: device.id
         )
+
+        if storedCredential == nil,
+           previousDeviceID != device.id,
+           let legacyCredential = try? PairingCredentialStore.load(
+               SamsungCredential.self,
+               platform: .samsung,
+               deviceID: previousDeviceID
+           ) {
+            storedCredential = legacyCredential
+
+            try? PairingCredentialStore.save(
+                legacyCredential,
+                platform: .samsung,
+                deviceID: device.id
+            )
+            PairingCredentialStore.remove(
+                platform: .samsung,
+                deviceID: previousDeviceID
+            )
+        }
 
         let url = try remoteURL(
             token: storedCredential?.token
