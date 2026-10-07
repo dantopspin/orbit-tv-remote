@@ -130,14 +130,76 @@ final class DeviceStore {
     }
 
     func reconcile(oldDeviceID: String, with resolvedDevice: TVDevice) {
-        guard let oldIndex = devices.firstIndex(where: { $0.id == oldDeviceID }) else {
+        guard let oldIndex = devices.firstIndex(
+            where: { $0.id == oldDeviceID }
+        ) else {
             addOrUpdate(resolvedDevice)
             return
         }
 
         let previous = devices[oldIndex]
+
+        // If this resolution points at a TV we already know, merge into
+        // that canonical record. Never replace a saved Pro record with a
+        // transient discovery/manual candidate, because that would lose
+        // the user's custom name and room label.
+        if oldDeviceID != resolvedDevice.id,
+           let canonicalIndex = devices.firstIndex(
+               where: { $0.id == resolvedDevice.id }
+           ) {
+            var merged = merge(
+                devices[canonicalIndex],
+                with: resolvedDevice
+            )
+
+            merged.formDiscoveryAliases(
+                previous.discoveryAliases.filter {
+                    Self.isTrustedIdentity(
+                        $0,
+                        platform: previous.platform
+                    )
+                }
+            )
+
+            if Self.isTrustedIdentity(
+                oldDeviceID,
+                platform: previous.platform
+            ) {
+                merged.formDiscoveryAliases(
+                    [oldDeviceID]
+                )
+            }
+
+            devices[canonicalIndex] = merged
+            devices.removeAll {
+                $0.id == oldDeviceID &&
+                $0.id != merged.id
+            }
+
+            if selectedDeviceID == oldDeviceID {
+                selectedDeviceID = merged.id
+            }
+
+            if UserDefaults.standard.string(
+                forKey: AppSettings.Keys.freeDeviceID
+            ) == oldDeviceID {
+                UserDefaults.standard.set(
+                    merged.id,
+                    forKey: AppSettings.Keys.freeDeviceID
+                )
+            }
+
+            persist()
+            return
+        }
+
         let genericNames: Set<String> = [
+            "Roku",
             "Roku TV",
+            "Samsung TV",
+            "LG TV",
+            "Android TV",
+            "Fire TV",
             "Smart TV",
             previous.platform.displayName
         ]
@@ -167,14 +229,7 @@ final class DeviceStore {
             merged.name = previous.name
         }
 
-        devices.removeAll { $0.id == resolvedDevice.id && $0.id != oldDeviceID }
-
-        guard let refreshedIndex = devices.firstIndex(where: { $0.id == oldDeviceID }) else {
-            addOrUpdate(merged)
-            return
-        }
-
-        devices[refreshedIndex] = merged
+        devices[oldIndex] = merged
 
         if selectedDeviceID == oldDeviceID {
             selectedDeviceID = merged.id
@@ -1219,6 +1274,7 @@ final class PurchaseManager {
     private(set) var products: [Product] = []
     private(set) var isPremium = false
     private(set) var activeProductID: String?
+    private(set) var entitlementsResolved = false
     private(set) var isLoading = false
     private(set) var isPurchasing = false
     private(set) var purchasePending = false
@@ -1240,13 +1296,17 @@ final class PurchaseManager {
         errorMessage = nil
         defer { isLoading = false }
 
+        // Current entitlements are locally verifiable and must not depend
+        // on a successful product-catalog request. Orbit is a LAN remote, so
+        // an active subscriber may legitimately launch without internet.
+        await refreshEntitlements()
+
         do {
             products = try await Product.products(for: [Self.weeklyID, Self.monthlyID])
                 .sorted { lhs, rhs in
                     if lhs.id == rhs.id { return false }
                     return lhs.id == Self.weeklyID
                 }
-            await refreshEntitlements()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1357,6 +1417,7 @@ final class PurchaseManager {
         isPremium = active
         self.activeProductID =
             activeProductID
+        entitlementsResolved = true
 
         if active {
             purchasePending = false
@@ -1522,12 +1583,9 @@ final class RemoteFavoritesStore {
 
 @MainActor
 final class RemoteCommandQueue {
-    private static let maximumPendingCommands = 6
-
     private var tail: Task<Void, Never>?
     private var pendingCoalescedCommands:
         Set<RemoteCommand> = []
-    private var pendingCount = 0
     private var generation = 0
 
     @discardableResult
@@ -1536,19 +1594,14 @@ final class RemoteCommandQueue {
         coalescing: Bool,
         _ operation: @escaping @MainActor () async -> Void
     ) -> Bool {
-        guard pendingCount <
-                Self.maximumPendingCommands else {
-            return false
-        }
-
+        // Only long-press repeat ticks are coalesced. Normal taps are never
+        // dropped, even when a slow TV has work queued ahead of them.
         if coalescing,
            pendingCoalescedCommands.contains(
                command
            ) {
             return false
         }
-
-        pendingCount += 1
 
         if coalescing {
             pendingCoalescedCommands.insert(
@@ -1568,18 +1621,11 @@ final class RemoteCommandQueue {
 
             defer {
                 if self.generation ==
-                    currentGeneration {
-                    self.pendingCount =
-                        max(
-                            0,
-                            self.pendingCount - 1
-                        )
-
-                    if coalescing {
-                        self.pendingCoalescedCommands.remove(
-                            command
-                        )
-                    }
+                    currentGeneration,
+                   coalescing {
+                    self.pendingCoalescedCommands.remove(
+                        command
+                    )
                 }
             }
 
@@ -1639,7 +1685,6 @@ final class RemoteCommandQueue {
         tail?.cancel()
         tail = nil
         pendingCoalescedCommands.removeAll()
-        pendingCount = 0
     }
 
     func waitUntilIdle() async {
@@ -1667,7 +1712,9 @@ final class AppModel {
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var connectingDeviceID: String?
+    @ObservationIgnored private var entitlementTask: Task<Void, Never>?
     @ObservationIgnored private var wasBackgrounded = false
+    private var transientSelectedDevice: TVDevice?
     @ObservationIgnored private var pendingFreeVerification:
         (freeDeviceID: String, candidateDeviceID: String)?
     @ObservationIgnored private let commandQueue = RemoteCommandQueue()
@@ -1731,7 +1778,8 @@ final class AppModel {
     }
 
     var currentDevice: TVDevice? {
-        deviceStore.selectedDevice
+        transientSelectedDevice ??
+            deviceStore.selectedDevice
     }
 
     var requiresPairing: Bool {
@@ -1847,19 +1895,29 @@ final class AppModel {
     func select(_ device: TVDevice) -> Bool {
         pendingFreeVerification = nil
 
-        if !purchases.isPremium,
-           let freeID = UserDefaults.standard.string(
-               forKey:
-                   AppSettings.Keys.freeDeviceID
-           ),
-           !deviceStore.matchesStoredDevice(
-               device,
-               id: freeID
-           ) {
+        let freeID = UserDefaults.standard.string(
+            forKey: AppSettings.Keys.freeDeviceID
+        )
+        let requiresFreeVerification =
+            !purchases.isPremium &&
+            freeID != nil &&
+            !deviceStore.matchesStoredDevice(
+                device,
+                id: freeID!
+            )
+
+        if requiresFreeVerification,
+           let freeID {
+            // Keep an unverified candidate entirely in memory. It must not
+            // become a saved/selected TV until its durable identity proves
+            // that it is the user's Free TV.
             pendingFreeVerification = (
                 freeDeviceID: freeID,
                 candidateDeviceID: device.id
             )
+            transientSelectedDevice = device
+        } else {
+            transientSelectedDevice = nil
         }
 
         connectTask?.cancel()
@@ -1869,27 +1927,30 @@ final class AppModel {
         commandQueue.cancel()
 
         let previousAdapter = adapter
+        let selectedDevice: TVDevice
 
-        let storedDevice =
-            deviceStore.addOrUpdate(device)
+        if requiresFreeVerification {
+            selectedDevice = device
+        } else {
+            selectedDevice =
+                deviceStore.addOrUpdate(device)
 
-        if purchases.isPremium ||
-            UserDefaults.standard.string(
-                forKey: AppSettings.Keys.freeDeviceID
-            ) == nil {
-            UserDefaults.standard.set(
-                storedDevice.id,
-                forKey: AppSettings.Keys.freeDeviceID
-            )
+            if purchases.isPremium ||
+                freeID == nil {
+                UserDefaults.standard.set(
+                    selectedDevice.id,
+                    forKey: AppSettings.Keys.freeDeviceID
+                )
+            }
         }
 
         let replacement =
             TVAdapterFactory.makeAdapter(
-                for: storedDevice
+                for: selectedDevice
             )
         adapter = replacement
         currentCapabilities =
-            storedDevice.capabilities
+            selectedDevice.capabilities
         pairingRequirement = .none
         lastControlError = nil
 
@@ -1916,6 +1977,7 @@ final class AppModel {
                 pendingFreeVerification,
               pending.candidateDeviceID ==
                 originalDeviceID else {
+            transientSelectedDevice = nil
             deviceStore.reconcile(
                 oldDeviceID: originalDeviceID,
                 with: resolvedDevice
@@ -1938,9 +2000,7 @@ final class AppModel {
             )
 
         if isFreeTV {
-            deviceStore.discardTransientDevice(
-                id: originalDeviceID
-            )
+            transientSelectedDevice = nil
             deviceStore.reconcile(
                 oldDeviceID:
                     pending.freeDeviceID,
@@ -1969,17 +2029,10 @@ final class AppModel {
             return true
         }
 
-        deviceStore.discardTransientDevice(
-            id: originalDeviceID
-        )
-        PairingCredentialStore.remove(
-            platform: resolvedDevice.platform,
-            deviceID: originalDeviceID
-        )
-        PairingCredentialStore.remove(
-            platform: resolvedDevice.platform,
-            deviceID: resolvedDevice.id
-        )
+        // Verification rejected the candidate. Because it was never written
+        // to DeviceStore, restoring the Free TV is transactional and cannot
+        // delete a previously saved Pro TV or its pairing credential.
+        transientSelectedDevice = nil
         await adapter.disconnect()
 
         if let freeDevice =
@@ -2009,9 +2062,7 @@ final class AppModel {
         }
 
         pendingFreeVerification = nil
-        deviceStore.discardTransientDevice(
-            id: pending.candidateDeviceID
-        )
+        transientSelectedDevice = nil
 
         if let freeDevice =
             deviceStore.devices.first(
@@ -2022,6 +2073,25 @@ final class AppModel {
             ) {
             deviceStore.select(freeDevice)
         }
+    }
+
+    private func enforceFreeSelectionIfNeeded() {
+        guard purchases.entitlementsResolved,
+              !purchases.isPremium,
+              pendingFreeVerification == nil,
+              transientSelectedDevice == nil,
+              let freeID = UserDefaults.standard.string(
+                  forKey: AppSettings.Keys.freeDeviceID
+              ),
+              let freeDevice = deviceStore.devices.first(
+                  where: { $0.id == freeID }
+              ),
+              deviceStore.selectedDeviceID != freeID else {
+            return
+        }
+
+        deviceStore.select(freeDevice)
+        refreshSelection()
     }
 
     func dismissProGate() {
@@ -2070,6 +2140,24 @@ final class AppModel {
     }
 
     func connect() {
+        guard purchases.entitlementsResolved else {
+            entitlementTask?.cancel()
+            entitlementTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                await self.purchases.refreshEntitlements()
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                self.entitlementTask = nil
+                self.enforceFreeSelectionIfNeeded()
+                self.connect()
+            }
+            return
+        }
+
         guard let device = currentDevice else {
             adapter = nil
             connectionState = .connecting
@@ -2167,7 +2255,10 @@ final class AppModel {
 
     func appDidBecomeActive() {
         Task { @MainActor [weak self] in
-            await self?.purchases.refreshForForeground()
+            guard let self else { return }
+
+            await self.purchases.refreshForForeground()
+            self.enforceFreeSelectionIfNeeded()
         }
 
         guard currentDevice != nil else {
@@ -2224,6 +2315,8 @@ final class AppModel {
 
     func appDidEnterBackground() {
         wasBackgrounded = true
+        entitlementTask?.cancel()
+        entitlementTask = nil
         connectTask?.cancel()
         connectTask = nil
         reconnectTask?.cancel()
@@ -2316,14 +2409,17 @@ final class AppModel {
         }
     }
 
-    func send(_ command: RemoteCommand) {
+    func send(
+        _ command: RemoteCommand,
+        isRepeat: Bool = false
+    ) {
         guard let adapter else { return }
 
         let deviceID = adapter.device.id
 
         let accepted = commandQueue.enqueue(
             command: command,
-            coalescing: false
+            coalescing: isRepeat
         ) { [weak self, adapter] in
             guard let self,
                   self.currentDevice?.id == deviceID else {
