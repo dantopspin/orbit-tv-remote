@@ -236,6 +236,7 @@ struct PremiumView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedID = PurchaseManager.monthlyID
+    @State private var showReplaceConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -255,6 +256,33 @@ struct PremiumView: View {
                         Text("More TVs, your preferred layout, and the shortcuts you use most.")
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
+                    }
+
+                    if let context =
+                        appModel.proGateContextMessage {
+                        VStack(spacing: 10) {
+                            Text(context)
+                                .font(.subheadline)
+                                .multilineTextAlignment(.center)
+
+                            if appModel
+                                .canReplaceFreeTVWithPendingCandidate {
+                                Button("Replace My Current TV") {
+                                    showReplaceConfirmation = true
+                                }
+                                .font(.subheadline.weight(.semibold))
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(
+                                cornerRadius: 16,
+                                style: .continuous
+                            )
+                            .fill(Color.orbitSurface)
+                        )
                     }
 
                     VStack(alignment: .leading, spacing: 18) {
@@ -344,11 +372,26 @@ struct PremiumView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
+
+                        if appModel.purchases.products.isEmpty,
+                           !appModel.purchases.isLoading {
+                            Button("Try Loading Prices Again") {
+                                Task {
+                                    await appModel.purchases.refresh()
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
 
                     Button("Restore Purchases") {
                         Task {
                             await appModel.purchases.restore()
+
+                            if appModel.purchases.isPremium {
+                                appModel.resumePendingProSelection()
+                                dismiss()
+                            }
                         }
                     }
                     .disabled(appModel.purchases.isPurchasing)
@@ -381,6 +424,24 @@ struct PremiumView: View {
                         dismiss()
                     }
                 }
+            }
+            .confirmationDialog(
+                "Replace your current Free TV?",
+                isPresented: $showReplaceConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Replace TV", role: .destructive) {
+                    if appModel
+                        .replaceFreeTVWithPendingCandidate() {
+                        dismiss()
+                    }
+                }
+
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    "Orbit will forget your current Free TV and use \(appModel.pendingProCandidateName ?? "this TV") instead. You can add multiple TVs with Orbit Pro."
+                )
             }
             .task {
                 await appModel.purchases.refreshForForeground()
