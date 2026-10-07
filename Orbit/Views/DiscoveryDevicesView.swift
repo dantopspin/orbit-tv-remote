@@ -27,7 +27,7 @@ struct DiscoveryView: View {
                         .font(.largeTitle.bold())
 
                     Text(
-                        "Make sure your TV is on and connected to the same Wi-Fi as your iPhone."
+                        "Supports Samsung Tizen, LG webOS, and Google TV / Android TV. Make sure your TV is on and connected to the same Wi-Fi as your iPhone."
                     )
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
