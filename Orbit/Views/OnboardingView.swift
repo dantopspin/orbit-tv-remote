@@ -70,7 +70,7 @@ private struct NavigationTutorialPage: View {
             title: "Easy to navigate",
             subtitle: "Use the D-pad or touchpad to move around your TV."
         ) {
-            DPadView(onCommand: { _ in })
+            DPadView(onCommand: { _, _ in })
                 .frame(width: 225, height: 225)
                 .allowsHitTesting(false)
         }
