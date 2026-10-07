@@ -580,7 +580,7 @@ struct RemoteView: View {
             AppsInputsView(initialSelection: appsInputsInitialSelection)
         }
         .sheet(isPresented: $showFindTV) {
-            DiscoveryView()
+            DiscoveryView(showsCloseButton: true)
         }
         .sheet(isPresented: pairingPresented) {
             TVPairingSheet()
