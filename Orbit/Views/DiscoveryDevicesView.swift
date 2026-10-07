@@ -194,6 +194,18 @@ struct DiscoveryView: View {
 
                 appModel.discovery.startScan()
             }
+            .onChange(of: appModel.currentDevice?.id) {
+                oldValue,
+                newValue in
+
+                guard showsCloseButton,
+                      oldValue != newValue,
+                      newValue != nil else {
+                    return
+                }
+
+                dismiss()
+            }
             .sheet(isPresented: $showPro) {
                 PremiumView()
             }
