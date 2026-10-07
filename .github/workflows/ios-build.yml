@@ -17,20 +17,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ICON="Orbit/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
-          DECODED="/tmp/orbit-app-icon-decoded.png"
-
-          # Force a full decode. Reading PNG metadata alone can succeed on a
-          # truncated IDAT stream, which previously let a corrupt icon pass CI.
-          sips -s format png "$ICON" --out "$DECODED" >/dev/null
-
-          INFO="$(sips -g pixelWidth -g pixelHeight -g hasAlpha "$DECODED")"
-          echo "$INFO"
-          echo "$INFO" | grep -q "pixelWidth: 1024"
-          echo "$INFO" | grep -q "pixelHeight: 1024"
-          echo "$INFO" | grep -q "hasAlpha: no"
-
-          # The app-icon background is intentionally the Orbit near-black.
           python3 - <<'PY'
           import struct
           import zlib
@@ -42,31 +28,66 @@ jobs:
           offset = 8
           idat = bytearray()
           saw_iend = False
+          width = height = bit_depth = color_type = None
 
           while offset < len(data):
+              if offset + 12 > len(data):
+                  raise AssertionError("truncated PNG chunk header")
+
               length = struct.unpack(">I", data[offset:offset + 4])[0]
               kind = data[offset + 4:offset + 8]
-              payload = data[offset + 8:offset + 8 + length]
-              crc = struct.unpack(
+              payload_start = offset + 8
+              payload_end = payload_start + length
+              crc_end = payload_end + 4
+
+              if crc_end > len(data):
+                  raise AssertionError(f"truncated {kind!r} chunk")
+
+              payload = data[payload_start:payload_end]
+              expected_crc = struct.unpack(
                   ">I",
-                  data[offset + 8 + length:offset + 12 + length]
+                  data[payload_end:crc_end]
               )[0]
+              actual_crc = zlib.crc32(kind + payload) & 0xFFFFFFFF
+              assert actual_crc == expected_crc, f"bad CRC for {kind!r}"
 
-              assert len(payload) == length
-              assert (
-                  zlib.crc32(kind + payload) & 0xFFFFFFFF
-              ) == crc
+              if kind == b"IHDR":
+                  (
+                      width,
+                      height,
+                      bit_depth,
+                      color_type,
+                      compression,
+                      filter_method,
+                      interlace
+                  ) = struct.unpack(">IIBBBBB", payload)
 
-              if kind == b"IDAT":
+                  assert width == 1024
+                  assert height == 1024
+                  assert bit_depth == 8
+                  assert color_type == 2, "app icon must be truecolor RGB without alpha"
+                  assert compression == 0
+                  assert filter_method == 0
+                  assert interlace in (0, 1)
+
+              elif kind == b"IDAT":
                   idat.extend(payload)
+
               elif kind == b"IEND":
                   saw_iend = True
                   break
 
-              offset += 12 + length
+              offset = crc_end
 
-          assert saw_iend
+          assert saw_iend, "missing IEND"
+          assert idat, "missing IDAT"
           zlib.decompress(bytes(idat))
+          assert width == 1024 and height == 1024
+
+          print(
+              f"Validated RGB PNG: {width}x{height}, "
+              f"{len(data)} bytes"
+          )
           PY
 
       - name: Select available iPhone simulator
