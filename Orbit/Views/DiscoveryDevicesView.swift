@@ -51,8 +51,12 @@ struct DiscoveryView: View {
                         Label("No TVs found yet", systemImage: "tv")
                     } description: {
                         Text(
-                            appModel.discovery.lastError ??
-                            "Make sure the TV is on and using the same Wi-Fi as this iPhone, then scan again."
+                            appModel.discovery.automaticSearchLimited
+                            ? "Orbit couldn’t complete the search. If you tapped Don’t Allow earlier, turn on Local Network for Orbit in iPhone Settings, then return and scan again."
+                            : (
+                                appModel.discovery.lastError ??
+                                "Make sure the TV is on and using the same Wi-Fi as this iPhone, then scan again."
+                            )
                         )
                     } actions: {
                         Button("Scan Again") {
@@ -61,7 +65,8 @@ struct DiscoveryView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(.primary)
 
-                        if appModel.localNetworkAccessLikelyDenied {
+                        if appModel.discovery.automaticSearchLimited ||
+                            appModel.localNetworkAccessLikelyDenied {
                             Button("Open iPhone Settings") {
                                 guard let url = URL(
                                     string:
