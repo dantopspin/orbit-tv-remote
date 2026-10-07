@@ -759,6 +759,7 @@ final class UnsupportedTVAdapter: TVControlling {
 final class DiscoveryService {
     private(set) var devices: [TVDevice] = []
     private(set) var isSearching = false
+    private(set) var automaticSearchLimited = false
     var lastError: String?
 
     @ObservationIgnored private var scanTask: Task<Void, Never>?
@@ -769,15 +770,16 @@ final class DiscoveryService {
         scanTask?.cancel()
 
         isSearching = true
+        automaticSearchLimited = false
         lastError = nil
         devices = []
 
         scanTask = Task { [weak self] in
             async let ssdpScan = SSDPScanner.scan(
-                timeout: 1.8
+                timeout: 5.0
             )
             async let androidTVs = AndroidTVBonjourScanner.scan(
-                timeout: 1.8
+                timeout: 5.0
             )
 
             let (ssdpResult, androidDevices) = await (
@@ -842,10 +844,13 @@ final class DiscoveryService {
                 ) == .orderedAscending
             }
 
-            if self.devices.isEmpty,
-               !ssdpResult.multicastSendSucceeded {
+            self.automaticSearchLimited =
+                self.devices.isEmpty &&
+                !ssdpResult.multicastSendSucceeded
+
+            if self.automaticSearchLimited {
                 self.lastError =
-                    "Orbit couldn’t find TVs automatically. Check Local Network access in Settings, or connect using your TV’s local IP address."
+                    "Automatic search couldn’t run for every TV. Make sure the TV is on and on the same Wi-Fi, then scan again. If it still doesn’t appear, enter its TV address."
             }
 
             self.onDevicesUpdated?(self.devices)
@@ -1309,7 +1314,8 @@ final class PurchaseManager {
                     return lhs.id == Self.weeklyID
                 }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage =
+                "Couldn’t load prices. Check your connection and try again."
         }
     }
 
@@ -1343,7 +1349,8 @@ final class PurchaseManager {
                 return false
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage =
+                "The purchase couldn’t be completed. Please try again."
             return false
         }
     }
@@ -1360,7 +1367,8 @@ final class PurchaseManager {
             try await AppStore.sync()
             await refreshEntitlements()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage =
+                "Couldn’t restore purchases. Check your connection and try again."
         }
     }
 
@@ -1809,17 +1817,55 @@ final class AppModel {
         return true
     }
 
+    var shouldShowTVApprovalHint: Bool {
+        guard connectionState == .connecting,
+              let device = currentDevice else {
+            return false
+        }
+
+        switch device.platform {
+        case .samsung:
+            return !SamsungTizenAdapter
+                .hasStoredCredential(for: device)
+        case .lgWebOS:
+            return !LGWebOSAdapter
+                .hasStoredCredential(for: device)
+        default:
+            return false
+        }
+    }
+
+    var proGateContextMessage: String? {
+        guard !purchases.isPremium,
+              let candidate = pendingProCandidate else {
+            return nil
+        }
+
+        return "Free includes one TV. Upgrade to add \(candidate.name), or replace your current TV for free."
+    }
+
+    var canReplaceFreeTVWithPendingCandidate: Bool {
+        !purchases.isPremium &&
+        pendingProCandidate != nil &&
+        UserDefaults.standard.string(
+            forKey: AppSettings.Keys.freeDeviceID
+        ) != nil
+    }
+
     var connectionMessage: String? {
         switch connectionState {
         case .connecting:
             switch currentDevice?.platform {
             case .samsung, .lgWebOS:
-                return "Approve Orbit on your TV if asked."
+                if shouldShowTVApprovalHint {
+                    return "Look at your TV and choose Allow with your TV remote."
+                }
+                return "Connecting to your TV…"
             case .androidTV:
                 if requiresPairing {
                     return "Enter the code shown on your TV."
                 }
-                return "Connecting to Android TV…"
+                return "Connecting to Google TV…"
             case .fireTV:
                 if requiresPairing {
                     return "Enter the 4-digit code shown on your Fire TV."
@@ -2141,6 +2187,35 @@ final class AppModel {
         _ = select(candidate)
     }
 
+    @discardableResult
+    func replaceFreeTVWithPendingCandidate() -> Bool {
+        guard !purchases.isPremium,
+              let candidate = pendingProCandidate else {
+            return false
+        }
+
+        if let freeID = UserDefaults.standard.string(
+            forKey: AppSettings.Keys.freeDeviceID
+        ),
+        let freeDevice = deviceStore.devices.first(
+            where: { $0.id == freeID }
+        ) {
+            favorites.removeAll(for: freeDevice.id)
+            deviceStore.remove(freeDevice)
+        }
+
+        UserDefaults.standard.removeObject(
+            forKey: AppSettings.Keys.freeDeviceID
+        )
+
+        pendingFreeVerification = nil
+        transientSelectedDevice = nil
+        pendingProCandidate = nil
+        proGateRequested = false
+
+        return select(candidate)
+    }
+
     func canAddOrUse(_ device: TVDevice) -> Bool {
         if purchases.isPremium {
             return true
@@ -2292,7 +2367,9 @@ final class AppModel {
                 }
 
                 self.connectionState = .unavailable
-                self.currentCapabilities = []
+                self.currentCapabilities =
+                    self.currentDevice?.capabilities ??
+                    self.currentCapabilities
                 self.pairingRequirement = .none
                 self.lastControlError =
                     self.userFacingMessage(for: error)
@@ -2494,6 +2571,11 @@ final class AppModel {
         isRepeat: Bool = false
     ) {
         guard let adapter else { return }
+
+        if connectionState == .connecting ||
+            requiresPairing {
+            return
+        }
 
         if connectionState == .unavailable,
            !requiresPairing {
@@ -2720,7 +2802,7 @@ final class AppModel {
             reconnectTask?.cancel()
             connectionState = .unavailable
             lastControlError = message ??
-                "The TV no longer recognizes Orbit. Pair it again."
+                "Your TV removed Orbit. Tap Reconnect and choose Allow on the TV."
         }
     }
 
@@ -2795,7 +2877,7 @@ final class AppModel {
                 return "This control isn’t supported by this TV."
 
             case .unreachable:
-                return "Orbit can’t reach this TV. Make sure it’s on and connected to the same Wi-Fi."
+                return "Can’t reach your TV. Make sure it’s on and on the same Wi-Fi. If it’s off, turn it on with its own remote — Orbit will reconnect automatically."
 
             case .permissionDenied(let message):
                 return message
@@ -2819,7 +2901,7 @@ final class AppModel {
         if nsError.domain == NSURLErrorDomain {
             switch nsError.code {
             case NSURLErrorTimedOut:
-                return "The TV didn’t respond. Make sure it’s on and connected to the same Wi-Fi."
+                return "Your TV didn’t respond. Make sure it’s on and on the same Wi-Fi. Orbit will keep trying."
 
             case NSURLErrorNotConnectedToInternet,
                  NSURLErrorNetworkConnectionLost,
@@ -2856,7 +2938,7 @@ final class AppModel {
 
         if lowered.contains("timed out") ||
             lowered.contains("timeout") {
-            return "The TV didn’t respond. Make sure it’s on and connected to the same Wi-Fi."
+            return "Your TV didn’t respond. Make sure it’s on and on the same Wi-Fi. Orbit will keep trying."
         }
 
         if lowered.contains("network connection was lost") ||
