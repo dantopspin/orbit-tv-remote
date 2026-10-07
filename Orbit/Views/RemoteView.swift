@@ -352,30 +352,75 @@ struct RemoteView: View {
                     header
 
                 if let message = appModel.connectionMessage {
-                    VStack(spacing: 8) {
-                        Text(message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(
-                                dynamicTypeSize.isAccessibilitySize
-                                ? nil
-                                : 3
+                    VStack(spacing: 10) {
+                        if appModel.shouldShowTVApprovalHint {
+                            HStack(spacing: 12) {
+                                Image(systemName: "tv")
+                                    .font(.title3)
+
+                                Text(message)
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(
+                                        maxWidth: .infinity,
+                                        alignment: .leading
+                                    )
+                            }
+                            .padding(14)
+                            .background(
+                                RoundedRectangle(
+                                    cornerRadius: 16,
+                                    style: .continuous
+                                )
+                                .fill(Color.orbitSurface)
                             )
-                            .frame(maxWidth: .infinity)
+                            .overlay(
+                                RoundedRectangle(
+                                    cornerRadius: 16,
+                                    style: .continuous
+                                )
+                                .stroke(
+                                    Color.orbitSeparator,
+                                    lineWidth: 0.5
+                                )
+                            )
+                        } else {
+                            Text(message)
+                                .font(.subheadline)
+                                .foregroundStyle(
+                                    appModel.connectionState ==
+                                        .unavailable
+                                    ? Color.primary
+                                    : Color.secondary
+                                )
+                                .multilineTextAlignment(.center)
+                                .lineLimit(
+                                    dynamicTypeSize.isAccessibilitySize
+                                    ? nil
+                                    : 4
+                                )
+                                .frame(maxWidth: .infinity)
+                        }
 
                         if appModel.connectionState == .unavailable {
-                            HStack(spacing: 10) {
+                            VStack(spacing: 8) {
                                 Button("Reconnect") {
                                     appModel.connect()
                                 }
+                                .frame(
+                                    maxWidth: .infinity,
+                                    minHeight: 44
+                                )
 
                                 Button("Find TV Again") {
                                     showFindTV = true
                                 }
+                                .frame(
+                                    maxWidth: .infinity,
+                                    minHeight: 44
+                                )
 
                                 if appModel.localNetworkAccessLikelyDenied {
-                                    Button("Settings") {
+                                    Button("Open iPhone Settings") {
                                         if let url = URL(
                                             string:
                                                 UIApplication.openSettingsURLString
@@ -383,9 +428,13 @@ struct RemoteView: View {
                                             UIApplication.shared.open(url)
                                         }
                                     }
+                                    .frame(
+                                        maxWidth: .infinity,
+                                        minHeight: 44
+                                    )
                                 }
                             }
-                            .font(.caption.weight(.semibold))
+                            .font(.subheadline.weight(.semibold))
                             .buttonStyle(.bordered)
                         }
                     }
@@ -693,14 +742,14 @@ struct RemoteView: View {
             Button {
                 showMore = true
             } label: {
-                Image(systemName: "ellipsis")
+                Image(systemName: "gearshape")
                     .font(.headline)
                     .frame(width: 44, height: 44)
                     .background(Circle().fill(Color.orbitSurface))
             }
             .buttonStyle(OrbitPressStyle(cornerRadius: 22))
             .foregroundStyle(.primary)
-            .accessibilityLabel("More")
+            .accessibilityLabel("Menu")
         }
     }
 }
