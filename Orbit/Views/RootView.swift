@@ -4,7 +4,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppSettings.Keys.onboardingCompleted) private var onboardingCompleted = false
-    @AppStorage(AppSettings.Keys.tvSetupDeferred) private var tvSetupDeferred = false
+    @AppStorage(AppSettings.Keys.tvSetupDeferred) private var tvSetupDeferred = true
 
     var body: some View {
         Group {
