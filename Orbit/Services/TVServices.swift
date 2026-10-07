@@ -3,6 +3,7 @@ import SwiftUI
 import StoreKit
 import UIKit
 import Observation
+import Network
 
 @MainActor
 @Observable
@@ -844,7 +845,7 @@ final class DiscoveryService {
             if self.devices.isEmpty,
                !ssdpResult.multicastSendSucceeded {
                 self.lastError =
-                    "Orbit couldn’t start SSDP discovery on this build. You can still connect by local IP. If Local Network access was denied, enable it in Settings and scan again."
+                    "Orbit couldn’t find TVs automatically. Check Local Network access in Settings, or connect using your TV’s local IP address."
             }
 
             self.onDevicesUpdated?(self.devices)
@@ -1711,10 +1712,16 @@ final class AppModel {
     @ObservationIgnored private var connectTask: Task<Void, Never>?
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private let networkMonitor = NWPathMonitor()
+    @ObservationIgnored private let networkMonitorQueue =
+        DispatchQueue(label: "Orbit.NetworkMonitor")
+    @ObservationIgnored private var reconnectAttempt = 0
+    @ObservationIgnored private var isForeground = true
     @ObservationIgnored private var connectingDeviceID: String?
     @ObservationIgnored private var entitlementTask: Task<Void, Never>?
     @ObservationIgnored private var wasBackgrounded = false
     private var transientSelectedDevice: TVDevice?
+    private var pendingProCandidate: TVDevice?
     @ObservationIgnored private var pendingFreeVerification:
         (freeDeviceID: String, candidateDeviceID: String)?
     @ObservationIgnored private let commandQueue = RemoteCommandQueue()
@@ -1754,6 +1761,19 @@ final class AppModel {
                 )
             }
         }
+
+        networkMonitor.pathUpdateHandler = {
+            [weak self] path in
+
+            guard path.status == .satisfied else {
+                return
+            }
+
+            Task { @MainActor [weak self] in
+                self?.networkBecameAvailable()
+            }
+        }
+        networkMonitor.start(queue: networkMonitorQueue)
 
         discovery.onDevicesUpdated = {
             [weak self] discoveredDevices in
@@ -1879,6 +1899,7 @@ final class AppModel {
                         identified,
                         id: freeID
                     ) else {
+                pendingProCandidate = identified
                 return false
             }
 
@@ -1894,6 +1915,8 @@ final class AppModel {
     @discardableResult
     func select(_ device: TVDevice) -> Bool {
         pendingFreeVerification = nil
+        pendingProCandidate = nil
+        reconnectAttempt = 0
 
         let freeID = UserDefaults.standard.string(
             forKey: AppSettings.Keys.freeDeviceID
@@ -2032,6 +2055,9 @@ final class AppModel {
         // Verification rejected the candidate. Because it was never written
         // to DeviceStore, restoring the Free TV is transactional and cannot
         // delete a previously saved Pro TV or its pairing credential.
+        // Keep the resolved candidate briefly so a successful Pro purchase
+        // can resume the user's original action without making them find it again.
+        pendingProCandidate = resolvedDevice
         transientSelectedDevice = nil
         await adapter.disconnect()
 
@@ -2096,6 +2122,20 @@ final class AppModel {
 
     func dismissProGate() {
         proGateRequested = false
+
+        if !purchases.isPremium {
+            pendingProCandidate = nil
+        }
+    }
+
+    func resumePendingProSelection() {
+        guard purchases.isPremium,
+              let candidate = pendingProCandidate else {
+            return
+        }
+
+        pendingProCandidate = nil
+        _ = select(candidate)
     }
 
     func canAddOrUse(_ device: TVDevice) -> Bool {
@@ -2127,6 +2167,7 @@ final class AppModel {
     @discardableResult
     func activate(_ device: TVDevice) -> Bool {
         guard canUse(device) else {
+            pendingProCandidate = device
             return false
         }
 
@@ -2212,6 +2253,9 @@ final class AppModel {
                     return
                 }
 
+                self.reconnectAttempt = 0
+                self.reconnectTask?.cancel()
+                self.reconnectTask = nil
                 self.connectionState = connection.state
                 self.currentCapabilities = connection.capabilities
                 self.pairingRequirement = connection.pairingRequirement
@@ -2247,13 +2291,20 @@ final class AppModel {
                 self.connectionState = .unavailable
                 self.currentCapabilities = []
                 self.pairingRequirement = .none
-                self.lastControlError = error.localizedDescription
+                self.lastControlError =
+                    self.userFacingMessage(for: error)
                 self.connectingDeviceID = nil
+                self.scheduleReconnect(
+                    adapter: adapter,
+                    deviceID: deviceID
+                )
             }
         }
     }
 
     func appDidBecomeActive() {
+        isForeground = true
+
         Task { @MainActor [weak self] in
             guard let self else { return }
 
@@ -2309,12 +2360,15 @@ final class AppModel {
 
         if !requiresPairing,
            shouldReconnect {
+            reconnectAttempt = 0
             connect()
         }
     }
 
     func appDidEnterBackground() {
+        isForeground = false
         wasBackgrounded = true
+        reconnectAttempt = 0
         entitlementTask?.cancel()
         entitlementTask = nil
         connectTask?.cancel()
@@ -2376,7 +2430,8 @@ final class AppModel {
             )
             return true
         } catch {
-            lastControlError = error.localizedDescription
+            lastControlError =
+                userFacingMessage(for: error)
             return false
         }
     }
@@ -2414,6 +2469,17 @@ final class AppModel {
         isRepeat: Bool = false
     ) {
         guard let adapter else { return }
+
+        if connectionState == .unavailable,
+           !requiresPairing {
+            reconnectAttempt = 0
+            connect()
+
+            if !isRepeat {
+                Haptics.shared.tap()
+            }
+            return
+        }
 
         let deviceID = adapter.device.id
 
@@ -2615,8 +2681,8 @@ final class AppModel {
         switch event {
         case .disconnected(let message):
             connectionState = .unavailable
-            lastControlError = message ??
-                "The TV connection was interrupted."
+            lastControlError =
+                userFacingMessage(from: message)
             scheduleReconnect(
                 adapter: adapter,
                 deviceID: deviceID
@@ -2637,35 +2703,185 @@ final class AppModel {
         adapter: TVControlling,
         deviceID: String
     ) {
+        guard isForeground,
+              !requiresPairing else {
+            return
+        }
+
         reconnectTask?.cancel()
+
+        let delays: [UInt64] = [1, 2, 5, 10, 30]
+        let index = min(
+            reconnectAttempt,
+            delays.count - 1
+        )
+        let delay = delays[index]
+        reconnectAttempt = min(
+            reconnectAttempt + 1,
+            delays.count - 1
+        )
 
         reconnectTask = Task { @MainActor [weak self, adapter] in
             try? await Task.sleep(
-                nanoseconds: 1_500_000_000
+                nanoseconds:
+                    delay * 1_000_000_000
             )
 
             guard !Task.isCancelled,
                   let self,
+                  self.isForeground,
                   self.adapter === adapter,
                   self.currentDevice?.id == deviceID,
-                  !self.requiresPairing else {
+                  !self.requiresPairing,
+                  self.connectionState == .unavailable else {
                 return
             }
 
+            self.reconnectTask = nil
             self.connect()
         }
     }
 
+    private func networkBecameAvailable() {
+        guard isForeground,
+              currentDevice != nil,
+              connectionState == .unavailable,
+              !requiresPairing else {
+            return
+        }
+
+        reconnectAttempt = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        connect()
+    }
+
+    var localNetworkAccessLikelyDenied: Bool {
+        lastControlError ==
+            "Local Network access is off. Enable it in Settings, then return to Orbit."
+    }
+
+    private func userFacingMessage(
+        for error: Error
+    ) -> String {
+        if let controlError = error as? TVControlError {
+            switch controlError {
+            case .unsupported:
+                return "This control isn’t supported by this TV."
+
+            case .unreachable:
+                return "Orbit can’t reach this TV. Make sure it’s on and connected to the same Wi-Fi."
+
+            case .permissionDenied(let message):
+                return message
+
+            case .rejected(_, let message):
+                return message ??
+                    "The TV rejected that request. Try again."
+
+            case .invalidResponse:
+                return "Orbit received an unexpected response from the TV. Try reconnecting."
+
+            case .transport(let message):
+                return userFacingMessage(
+                    from: message
+                )
+            }
+        }
+
+        let nsError = error as NSError
+
+        if nsError.domain == NSURLErrorDomain {
+            switch nsError.code {
+            case NSURLErrorTimedOut:
+                return "The TV didn’t respond. Make sure it’s on and connected to the same Wi-Fi."
+
+            case NSURLErrorNotConnectedToInternet,
+                 NSURLErrorNetworkConnectionLost,
+                 NSURLErrorCannotConnectToHost,
+                 NSURLErrorCannotFindHost:
+                return "Connection to the TV was lost. Orbit will keep trying to reconnect."
+
+            default:
+                break
+            }
+        }
+
+        return userFacingMessage(
+            from: error.localizedDescription
+        )
+    }
+
+    private func userFacingMessage(
+        from message: String?
+    ) -> String {
+        guard let message,
+              !message.isEmpty else {
+            return "The TV connection was interrupted. Orbit will keep trying to reconnect."
+        }
+
+        let lowered = message.lowercased()
+
+        if lowered.contains("policydenied") ||
+            lowered.contains("policy denied") ||
+            lowered.contains("operation not permitted") ||
+            lowered.contains("local network access") {
+            return "Local Network access is off. Enable it in Settings, then return to Orbit."
+        }
+
+        if lowered.contains("timed out") ||
+            lowered.contains("timeout") {
+            return "The TV didn’t respond. Make sure it’s on and connected to the same Wi-Fi."
+        }
+
+        if lowered.contains("network connection was lost") ||
+            lowered.contains("could not connect") ||
+            lowered.contains("cannot connect") ||
+            lowered.contains("not connected to the internet") ||
+            lowered.contains("connection reset") ||
+            lowered.contains("connection refused") {
+            return "Connection to the TV was lost. Orbit will keep trying to reconnect."
+        }
+
+        // Adapter-authored messages are already written for the user.
+        if message.contains("Orbit") ||
+            lowered.contains("pair") ||
+            lowered.contains("approve") ||
+            lowered.contains("denied") ||
+            lowered.contains("revoked") {
+            return message
+        }
+
+        return "Orbit couldn’t communicate with the TV. Try reconnecting, or find the TV again if its network address changed."
+    }
+
     private func applyControlError(_ error: Error) {
-        lastControlError = error.localizedDescription
+        lastControlError =
+            userFacingMessage(for: error)
 
         if let controlError = error as? TVControlError {
             if controlError.affectsConnectionState {
                 connectionState = .unavailable
+
+                if let adapter,
+                   let deviceID = currentDevice?.id {
+                    scheduleReconnect(
+                        adapter: adapter,
+                        deviceID: deviceID
+                    )
+                }
             }
             return
         }
 
         connectionState = .unavailable
+
+        if let adapter,
+           let deviceID = currentDevice?.id {
+            scheduleReconnect(
+                adapter: adapter,
+                deviceID: deviceID
+            )
+        }
     }
 }
