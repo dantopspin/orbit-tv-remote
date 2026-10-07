@@ -850,7 +850,7 @@ final class DiscoveryService {
 
             if self.automaticSearchLimited {
                 self.lastError =
-                    "Automatic search couldn’t run for every TV. Make sure the TV is on and on the same Wi-Fi, then scan again. If it still doesn’t appear, enter its TV address."
+                    "Orbit couldn’t complete the search. Make sure the TV is on and on the same Wi-Fi, then scan again. If it still doesn’t appear, enter its TV address."
             }
 
             self.onDevicesUpdated?(self.devices)
