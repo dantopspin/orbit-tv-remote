@@ -7,6 +7,18 @@ struct RootView: View {
     @AppStorage(AppSettings.Keys.tvSetupDeferred) private var tvSetupDeferred = true
 
     var body: some View {
+        #if DEBUG
+        if let screen = visualValidationScreen {
+            VisualValidationHost(screen: screen)
+        } else {
+            productionContent
+        }
+        #else
+        productionContent
+        #endif
+    }
+
+    private var productionContent: some View {
         Group {
             if !onboardingCompleted {
                 OnboardingFlowView()
@@ -41,7 +53,128 @@ struct RootView: View {
             }
         }
     }
+
+    #if DEBUG
+    private var visualValidationScreen: String? {
+        let arguments = ProcessInfo.processInfo.arguments
+
+        guard let index = arguments.firstIndex(
+            of: "-orbitVisualQA"
+        ),
+        arguments.indices.contains(index + 1) else {
+            return nil
+        }
+
+        return arguments[index + 1]
+    }
+    #endif
 }
+
+#if DEBUG
+private struct VisualValidationHost: View {
+    @Environment(AppModel.self) private var appModel
+
+    let screen: String
+
+    var body: some View {
+        Group {
+            switch screen {
+            case "onboarding":
+                OnboardingFlowView()
+
+            case "no-tv":
+                NoTVHomeView()
+
+            case "discovery":
+                DiscoveryView()
+
+            case "remote":
+                RemoteView()
+
+            case "paywall":
+                PremiumView()
+
+            case "settings":
+                SettingsView()
+
+            case "keyboard":
+                KeyboardSheet()
+
+            case "pairing":
+                TVPairingSheet()
+
+            case "apps":
+                AppsInputsView()
+
+            case "devices":
+                DevicesView()
+
+            default:
+                OnboardingFlowView()
+            }
+        }
+        .task {
+            seedValidationStateIfNeeded()
+        }
+    }
+
+    private func seedValidationStateIfNeeded() {
+        let fullCapabilities: Set<TVCapability> = [
+            .directionalNavigation,
+            .touchpad,
+            .keyboard,
+            .power,
+            .volume,
+            .mute,
+            .inputSelection,
+            .appLaunching,
+            .playback
+        ]
+
+        if screen == "remote" ||
+            screen == "pairing" ||
+            screen == "devices" {
+            let primary = TVDevice(
+                id: "qa-samsung-living-room",
+                name: "Living Room TV",
+                platform: .samsung,
+                host: "192.0.2.10",
+                roomName: "Living Room",
+                capabilities: fullCapabilities
+            )
+
+            let secondary = TVDevice(
+                id: "qa-lg-bedroom",
+                name: "Bedroom TV",
+                platform: .lgWebOS,
+                host: "192.0.2.11",
+                roomName: "Bedroom",
+                capabilities: fullCapabilities
+            )
+
+            appModel.deviceStore.addOrUpdate(primary)
+            appModel.deviceStore.addOrUpdate(secondary)
+            appModel.deviceStore.select(primary)
+            UserDefaults.standard.set(
+                primary.id,
+                forKey: AppSettings.Keys.freeDeviceID
+            )
+            appModel.currentCapabilities = fullCapabilities
+            appModel.connectionState = .connected
+            appModel.lastControlError = nil
+        }
+
+        if screen == "pairing" {
+            appModel.pairingRequirement = .pin(
+                length: 6,
+                message:
+                    "Enter the code shown on your TV."
+            )
+            appModel.connectionState = .connecting
+        }
+    }
+}
+#endif
 
 
 private struct NoTVHomeView: View {
