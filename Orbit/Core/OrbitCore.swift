@@ -28,6 +28,54 @@ extension Color {
     static let orbitPower = Color(red: 0.95, green: 0.20, blue: 0.18)
 }
 
+private struct OrbitRaisedPanelModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let shadowOpacity: Double
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(
+                    cornerRadius: cornerRadius,
+                    style: .continuous
+                )
+                .fill(Color.orbitSurface)
+            )
+            .overlay(
+                RoundedRectangle(
+                    cornerRadius: cornerRadius,
+                    style: .continuous
+                )
+                .stroke(
+                    Color.primary.opacity(0.08),
+                    lineWidth: 0.8
+                )
+            )
+            .shadow(
+                color: Color.black.opacity(
+                    shadowOpacity
+                ),
+                radius: 8,
+                x: 0,
+                y: 3
+            )
+    }
+}
+
+extension View {
+    func orbitRaisedPanel(
+        cornerRadius: CGFloat = 18,
+        shadowOpacity: Double = 0.05
+    ) -> some View {
+        modifier(
+            OrbitRaisedPanelModifier(
+                cornerRadius: cornerRadius,
+                shadowOpacity: shadowOpacity
+            )
+        )
+    }
+}
+
 struct OrbitPressStyle: ButtonStyle {
     var cornerRadius: CGFloat = 22
 

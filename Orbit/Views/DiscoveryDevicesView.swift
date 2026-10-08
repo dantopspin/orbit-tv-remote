@@ -22,18 +22,49 @@ struct DiscoveryView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
-                VStack(spacing: 8) {
-                    Text("Find Your TV")
-                        .font(.largeTitle.bold())
+                VStack(spacing: 12) {
+                    Image(systemName: "tv")
+                        .font(
+                            .system(
+                                size: 22,
+                                weight: .semibold
+                            )
+                        )
+                        .frame(
+                            width: 58,
+                            height: 58
+                        )
+                        .background(
+                            Circle()
+                                .fill(Color.orbitSurface)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    Color.primary.opacity(0.08),
+                                    lineWidth: 0.8
+                                )
+                        )
+                        .shadow(
+                            color: Color.black.opacity(0.06),
+                            radius: 10,
+                            x: 0,
+                            y: 4
+                        )
 
-                    Text(
-                        "Supports Samsung Tizen, LG webOS, and Google TV / Android TV. Make sure your TV is on and connected to the same Wi-Fi as your iPhone."
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                    VStack(spacing: 6) {
+                        Text("Find Your TV")
+                            .font(.largeTitle.bold())
+
+                        Text(
+                            "Supports Samsung Tizen, LG webOS, and Google TV / Android TV. Make sure your TV is on and connected to the same Wi-Fi as your iPhone."
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    }
                 }
-                .padding(.top, 24)
+                .padding(.top, 18)
                 .padding(.horizontal, 28)
 
                 if appModel.discovery.isSearching {
@@ -104,6 +135,24 @@ struct DiscoveryView: View {
                         } label: {
                             HStack(spacing: 14) {
                                 Image(systemName: "tv")
+                                    .font(
+                                        .system(
+                                            size: 15,
+                                            weight: .semibold
+                                        )
+                                    )
+                                    .frame(
+                                        width: 36,
+                                        height: 36
+                                    )
+                                    .background(
+                                        Circle()
+                                            .fill(
+                                                Color.primary.opacity(
+                                                    0.045
+                                                )
+                                            )
+                                    )
 
                                 VStack(
                                     alignment: .leading,
@@ -127,13 +176,41 @@ struct DiscoveryView: View {
                                 }
                             }
                             .foregroundStyle(.primary)
+                            .padding(
+                                .horizontal,
+                                14
+                            )
+                            .padding(
+                                .vertical,
+                                12
+                            )
+                            .orbitRaisedPanel(
+                                cornerRadius: 18
+                            )
                         }
+                        .buttonStyle(
+                            OrbitPressStyle(
+                                cornerRadius: 18
+                            )
+                        )
                         .disabled(
                             selectingDeviceID != nil &&
                             selectingDeviceID != device.id
                         )
+                        .listRowInsets(
+                            EdgeInsets(
+                                top: 5,
+                                leading: 20,
+                                bottom: 5,
+                                trailing: 20
+                            )
+                        )
+                        .listRowBackground(
+                            Color.clear
+                        )
+                        .listRowSeparator(.hidden)
                     }
-                    .listStyle(.insetGrouped)
+                    .listStyle(.plain)
                     .scrollContentBackground(.hidden)
                 }
 
@@ -282,6 +359,8 @@ struct DiscoveryView: View {
                         )
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .background(Color.orbitBackground)
 
                 Button("Connect") {
                     Task {
@@ -314,6 +393,10 @@ struct DiscoveryView: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
             }
+            .background(
+                Color.orbitBackground
+                    .ignoresSafeArea()
+            )
             .navigationTitle("Enter TV Address")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -371,6 +454,24 @@ struct DevicesView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "tv")
+                                    .font(
+                                        .system(
+                                            size: 14,
+                                            weight: .semibold
+                                        )
+                                    )
+                                    .frame(
+                                        width: 34,
+                                        height: 34
+                                    )
+                                    .background(
+                                        Circle()
+                                            .fill(
+                                                Color.primary.opacity(
+                                                    0.045
+                                                )
+                                            )
+                                    )
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(device.name)
@@ -435,6 +536,8 @@ struct DevicesView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.orbitBackground)
             .navigationTitle("Devices")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -478,6 +581,24 @@ private struct RoomAssignmentsView: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "tv")
+                                    .font(
+                                        .system(
+                                            size: 14,
+                                            weight: .semibold
+                                        )
+                                    )
+                                    .frame(
+                                        width: 34,
+                                        height: 34
+                                    )
+                                    .background(
+                                        Circle()
+                                            .fill(
+                                                Color.primary.opacity(
+                                                    0.045
+                                                )
+                                            )
+                                    )
 
                                 VStack(
                                     alignment: .leading,
@@ -505,6 +626,8 @@ private struct RoomAssignmentsView: View {
                     Text("Room names stay on this iPhone and make it easier to tell your TVs apart.")
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.orbitBackground)
             .navigationTitle("Rooms")
             .toolbar {
                 ToolbarItem(

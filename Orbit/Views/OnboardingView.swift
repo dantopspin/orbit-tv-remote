@@ -72,7 +72,7 @@ private struct WelcomePage: View {
             OrbitMark(size: 116)
                 .padding(.bottom, 18)
 
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 10) {
                 FeatureLine(icon: "iphone", text: "A simple, powerful remote for your TV.")
                 FeatureLine(icon: "person.crop.circle.badge.xmark", text: "No account required.")
                 FeatureLine(icon: "wifi", text: "Works on your local network.")
@@ -110,8 +110,9 @@ private struct KeyboardTutorialPage: View {
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 50)
-                .background(Color.orbitSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .orbitRaisedPanel(
+                    cornerRadius: 16
+                )
 
                 Image(systemName: "keyboard")
                     .font(.system(size: 74, weight: .light))
@@ -129,7 +130,7 @@ private struct LocalNetworkPage: View {
             title: "Connect to your TV",
             subtitle: "Next, your iPhone will ask for Local Network access."
         ) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 10) {
                 FeatureLine(
                     icon: "checkmark.circle",
                     text: "Tap Allow so Orbit can find your TV."
@@ -168,8 +169,8 @@ private struct OnboardingPage<Content: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer(minLength: 48)
+        VStack(spacing: 22) {
+            Spacer(minLength: 40)
             content
 
             Text(title)
@@ -193,16 +194,46 @@ private struct FeatureLine: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Image(systemName: icon)
-                .frame(width: 24)
+                .font(
+                    .system(
+                        size: 15,
+                        weight: .semibold
+                    )
+                )
+                .frame(
+                    width: 34,
+                    height: 34
+                )
+                .background(
+                    Circle()
+                        .fill(
+                            Color.primary.opacity(0.045)
+                        )
+                )
+                .overlay(
+                    Circle()
+                        .stroke(
+                            Color.primary.opacity(0.07),
+                            lineWidth: 0.7
+                        )
+                )
                 .foregroundStyle(.primary)
 
             Text(text)
-                .font(.subheadline)
+                .font(
+                    .subheadline.weight(.medium)
+                )
 
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 10)
+        .orbitRaisedPanel(
+            cornerRadius: 17,
+            shadowOpacity: 0.035
+        )
     }
 }
 

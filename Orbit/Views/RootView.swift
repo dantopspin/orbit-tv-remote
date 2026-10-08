@@ -53,7 +53,29 @@ private struct NoTVHomeView: View {
             VStack(spacing: 22) {
                 Spacer()
 
-                OrbitMark(size: 96)
+                ZStack {
+                    Circle()
+                        .fill(Color.orbitSurface)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    Color.primary.opacity(0.08),
+                                    lineWidth: 0.8
+                                )
+                        )
+                        .shadow(
+                            color: Color.black.opacity(0.06),
+                            radius: 14,
+                            x: 0,
+                            y: 6
+                        )
+
+                    OrbitMark(size: 82)
+                }
+                .frame(
+                    width: 132,
+                    height: 132
+                )
 
                 VStack(spacing: 8) {
                     Text("No TV connected")
@@ -94,7 +116,39 @@ private struct NoTVHomeView: View {
                         showSettings = true
                     } label: {
                         Image(systemName: "gearshape")
+                            .font(.headline)
+                            .frame(
+                                width: 40,
+                                height: 40
+                            )
+                            .background(
+                                Circle()
+                                    .fill(
+                                        Color.orbitSurface
+                                    )
+                            )
+                            .overlay(
+                                Circle()
+                                    .stroke(
+                                        Color.primary
+                                            .opacity(0.08),
+                                        lineWidth: 0.8
+                                    )
+                            )
+                            .shadow(
+                                color: Color.black
+                                    .opacity(0.05),
+                                radius: 6,
+                                x: 0,
+                                y: 3
+                            )
                     }
+                    .buttonStyle(
+                        OrbitPressStyle(
+                            cornerRadius: 20
+                        )
+                    )
+                    .foregroundStyle(.primary)
                     .accessibilityLabel("Settings")
                 }
             }

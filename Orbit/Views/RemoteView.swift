@@ -1096,7 +1096,21 @@ struct TVPairingSheet: View {
                         .font(.system(size: 34, weight: .medium))
                         .frame(width: 68, height: 68)
                         .background(
-                            Circle().fill(Color.orbitSurface)
+                            Circle()
+                                .fill(Color.orbitSurface)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    Color.primary.opacity(0.08),
+                                    lineWidth: 0.8
+                                )
+                        )
+                        .shadow(
+                            color: Color.black.opacity(0.06),
+                            radius: 10,
+                            x: 0,
+                            y: 4
                         )
 
                     Text("Pair with your TV")
@@ -1131,7 +1145,12 @@ struct TVPairingSheet: View {
                         )
                     )
                     .multilineTextAlignment(.center)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 56)
+                    .orbitRaisedPanel(
+                        cornerRadius: 16
+                    )
                     .focused($codeFocused)
                     .onChange(of: code) { _, newValue in
                         let filtered = String(
@@ -1176,6 +1195,10 @@ struct TVPairingSheet: View {
                 Spacer(minLength: 0)
             }
             .padding(22)
+            .background(
+                Color.orbitBackground
+                    .ignoresSafeArea()
+            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(
@@ -1289,7 +1312,12 @@ struct KeyboardSheet: View {
         NavigationStack {
             VStack(spacing: 18) {
                 TextField("Type on your TV…", text: $text)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 54)
+                    .orbitRaisedPanel(
+                        cornerRadius: 16
+                    )
                     .focused($focused)
                     .submitLabel(.send)
                     .onSubmit {
@@ -1310,6 +1338,10 @@ struct KeyboardSheet: View {
                 Spacer()
             }
             .padding(20)
+            .background(
+                Color.orbitBackground
+                    .ignoresSafeArea()
+            )
             .navigationTitle("Keyboard")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1400,6 +1432,10 @@ struct AppsInputsView: View {
                     }
                 }
             }
+            .background(
+                Color.orbitBackground
+                    .ignoresSafeArea()
+            )
             .navigationTitle("Apps & Inputs")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1566,6 +1602,8 @@ struct AppsInputsView: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.orbitBackground)
     }
 
     private var inputsList: some View {
@@ -1654,6 +1692,8 @@ struct AppsInputsView: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.orbitBackground)
     }
 }
 
@@ -1706,6 +1746,8 @@ struct MoreMenuSheet: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.orbitBackground)
             .foregroundStyle(.primary)
             .navigationTitle(appModel.currentDevice?.name ?? "TV")
             .navigationBarTitleDisplayMode(.inline)
