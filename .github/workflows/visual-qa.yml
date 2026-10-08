@@ -9,21 +9,28 @@ on:
 jobs:
   screenshots:
     runs-on: macos-15
-    timeout-minutes: 35
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [small, standard, large]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Select small, standard, and large iPhones
+      - name: Select iPhone for role
         shell: bash
+        env:
+          ROLE: ${{ matrix.role }}
         run: |
           set -euo pipefail
           xcrun simctl list devices available -j > /tmp/devices.json
 
           python3 - <<'PY' >> "$GITHUB_ENV"
-          import json
+          import json, os
 
+          role = os.environ["ROLE"]
           data = json.load(open("/tmp/devices.json"))
           devices = []
           for runtime_devices in data["devices"].values():
@@ -35,38 +42,36 @@ jobs:
           for name, udid in devices:
               by_name.setdefault(name, udid)
 
-          def pick(preferred, excluded=set()):
-              for name in preferred:
-                  if name in by_name and by_name[name] not in excluded:
-                      return name, by_name[name]
-              for name, udid in devices:
-                  if udid not in excluded:
-                      return name, udid
-              raise RuntimeError("No available iPhone simulators")
+          preferences = {
+              "small": [
+                  "iPhone SE (3rd generation)",
+                  "iPhone SE (2nd generation)",
+                  "iPhone 13 mini"
+              ],
+              "standard": [
+                  "iPhone 16",
+                  "iPhone 15",
+                  "iPhone 16 Pro",
+                  "iPhone 15 Pro"
+              ],
+              "large": [
+                  "iPhone 16 Pro Max",
+                  "iPhone 15 Pro Max",
+                  "iPhone 14 Pro Max"
+              ]
+          }
 
-          small = pick([
-              "iPhone SE (3rd generation)",
-              "iPhone SE (2nd generation)",
-              "iPhone 13 mini"
-          ])
-          standard = pick([
-              "iPhone 16",
-              "iPhone 15",
-              "iPhone 16 Pro",
-              "iPhone 15 Pro"
-          ], {small[1]})
-          large = pick([
-              "iPhone 16 Pro Max",
-              "iPhone 15 Pro Max",
-              "iPhone 14 Pro Max"
-          ], {small[1], standard[1]})
+          selected = None
+          for name in preferences[role]:
+              if name in by_name:
+                  selected = (name, by_name[name])
+                  break
 
-          print(f"SMALL_NAME={small[0]}")
-          print(f"SMALL_UDID={small[1]}")
-          print(f"STANDARD_NAME={standard[0]}")
-          print(f"STANDARD_UDID={standard[1]}")
-          print(f"LARGE_NAME={large[0]}")
-          print(f"LARGE_UDID={large[1]}")
+          if selected is None:
+              selected = devices[0]
+
+          print(f"DEVICE_NAME={selected[0]}")
+          print(f"DEVICE_UDID={selected[1]}")
           PY
 
       - name: Build Debug app for Simulator
@@ -92,95 +97,69 @@ jobs:
 
       - name: Capture real SwiftUI screens
         shell: bash
+        env:
+          ROLE: ${{ matrix.role }}
         run: |
           set -euo pipefail
 
-          mkdir -p visual-qa
+          mkdir -p "visual-qa/$ROLE"
           BUNDLE_ID="com.dantopspin.orbitremote"
-          SCREENS=(
-            onboarding
-            no-tv
-            remote
-            paywall
-            settings
-            keyboard
-            pairing
-            apps
-            devices
-            discovery
-          )
 
-          capture_device() {
-            local label="$1"
-            local udid="$2"
-
-            xcrun simctl boot "$udid" 2>/dev/null || true
-            xcrun simctl bootstatus "$udid" -b
-            xcrun simctl install "$udid" "$APP_PATH"
-            xcrun simctl ui "$udid" appearance light || true
-            xcrun simctl status_bar "$udid" override \
-              --time "9:41" \
-              --batteryState charged \
-              --batteryLevel 100 \
-              --wifiBars 3 \
-              --cellularBars 4 || true
-            xcrun simctl privacy "$udid" grant local-network "$BUNDLE_ID" || true
-
-            for screen in "${SCREENS[@]}"; do
-              xcrun simctl terminate "$udid" "$BUNDLE_ID" 2>/dev/null || true
-              xcrun simctl launch "$udid" "$BUNDLE_ID" \
-                -orbitVisualQA "$screen" >/dev/null
-
-              case "$screen" in
-                discovery) sleep 7 ;;
-                paywall|apps) sleep 4 ;;
-                *) sleep 2 ;;
-              esac
-
-              xcrun simctl io "$udid" screenshot \
-                "visual-qa/${label}-${screen}-light.png"
-            done
-
-            xcrun simctl shutdown "$udid" || true
-          }
-
-          capture_device "small" "$SMALL_UDID"
-          capture_device "standard" "$STANDARD_UDID"
-          capture_device "large" "$LARGE_UDID"
-
-          # Dark-mode spot check on the standard-size iPhone.
-          xcrun simctl boot "$STANDARD_UDID" 2>/dev/null || true
-          xcrun simctl bootstatus "$STANDARD_UDID" -b
-          xcrun simctl install "$STANDARD_UDID" "$APP_PATH"
-          xcrun simctl ui "$STANDARD_UDID" appearance dark || true
-          xcrun simctl status_bar "$STANDARD_UDID" override \
+          xcrun simctl boot "$DEVICE_UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$DEVICE_UDID" -b
+          xcrun simctl install "$DEVICE_UDID" "$APP_PATH"
+          xcrun simctl ui "$DEVICE_UDID" appearance light || true
+          xcrun simctl status_bar "$DEVICE_UDID" override \
             --time "9:41" \
             --batteryState charged \
             --batteryLevel 100 \
             --wifiBars 3 \
             --cellularBars 4 || true
+          xcrun simctl privacy "$DEVICE_UDID" grant local-network "$BUNDLE_ID" || true
 
-          for screen in onboarding no-tv remote paywall settings; do
-            xcrun simctl terminate "$STANDARD_UDID" "$BUNDLE_ID" 2>/dev/null || true
-            xcrun simctl launch "$STANDARD_UDID" "$BUNDLE_ID" \
+          CORE=(onboarding no-tv remote paywall settings)
+          EXTRA=(keyboard pairing apps devices discovery)
+
+          capture() {
+            local screen="$1"
+            local appearance="$2"
+
+            xcrun simctl terminate "$DEVICE_UDID" "$BUNDLE_ID" 2>/dev/null || true
+            xcrun simctl launch "$DEVICE_UDID" "$BUNDLE_ID" \
               -orbitVisualQA "$screen" >/dev/null
-            sleep 3
-            xcrun simctl io "$STANDARD_UDID" screenshot \
-              "visual-qa/standard-${screen}-dark.png"
+
+            case "$screen" in
+              discovery) sleep 6 ;;
+              paywall|apps) sleep 3 ;;
+              *) sleep 1.5 ;;
+            esac
+
+            xcrun simctl io "$DEVICE_UDID" screenshot \
+              "visual-qa/$ROLE/${screen}-${appearance}.png"
+          }
+
+          for screen in "${CORE[@]}"; do
+            capture "$screen" light
           done
 
-          xcrun simctl shutdown "$STANDARD_UDID" || true
+          if [ "$ROLE" = "standard" ]; then
+            for screen in "${EXTRA[@]}"; do
+              capture "$screen" light
+            done
 
-          {
-            echo "Small: $SMALL_NAME ($SMALL_UDID)"
-            echo "Standard: $STANDARD_NAME ($STANDARD_UDID)"
-            echo "Large: $LARGE_NAME ($LARGE_UDID)"
-          } > visual-qa/devices.txt
+            xcrun simctl ui "$DEVICE_UDID" appearance dark || true
+            for screen in onboarding no-tv remote paywall settings; do
+              capture "$screen" dark
+            done
+          fi
+
+          echo "$DEVICE_NAME" > "visual-qa/$ROLE/device.txt"
+          xcrun simctl shutdown "$DEVICE_UDID" || true
 
       - name: Upload visual QA screenshots
         uses: actions/upload-artifact@v4
         with:
-          name: orbit-visual-qa
-          path: visual-qa/
+          name: orbit-visual-qa-${{ matrix.role }}
+          path: visual-qa/${{ matrix.role }}/
           if-no-files-found: error
           retention-days: 7
