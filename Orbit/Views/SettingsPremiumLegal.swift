@@ -27,12 +27,24 @@ struct SettingsView: View {
 
                 Section("Remote") {
                     if appModel.purchases.isPremium {
-                        NavigationLink("Customize Remote") {
+                        NavigationLink {
                             CustomRemoteView()
+                        } label: {
+                            Label(
+                                "Customize Remote",
+                                systemImage:
+                                    "slider.horizontal.3"
+                            )
                         }
                     } else {
-                        Button("Customize Remote") {
+                        Button {
                             showPremium = true
+                        } label: {
+                            Label(
+                                "Customize Remote",
+                                systemImage:
+                                    "slider.horizontal.3"
+                            )
                         }
                     }
                 }
@@ -79,20 +91,44 @@ struct SettingsView: View {
                 }
 
                 Section("Support & Legal") {
-                    NavigationLink("FAQ") {
+                    NavigationLink {
                         FAQView()
+                    } label: {
+                        Label(
+                            "FAQ",
+                            systemImage:
+                                "questionmark.circle"
+                        )
                     }
 
-                    NavigationLink("Privacy Policy") {
+                    NavigationLink {
                         PrivacyPolicyView()
+                    } label: {
+                        Label(
+                            "Privacy Policy",
+                            systemImage:
+                                "hand.raised"
+                        )
                     }
 
-                    NavigationLink("Terms of Service") {
+                    NavigationLink {
                         TermsOfServiceView()
+                    } label: {
+                        Label(
+                            "Terms of Service",
+                            systemImage:
+                                "doc.text"
+                        )
                     }
 
-                    NavigationLink("Acknowledgements") {
+                    NavigationLink {
                         AcknowledgementsView()
+                    } label: {
+                        Label(
+                            "Acknowledgements",
+                            systemImage:
+                                "shippingbox"
+                        )
                     }
                 }
 
@@ -105,6 +141,8 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.orbitBackground)
             .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -212,6 +250,8 @@ private struct CustomRemoteView: View {
                 Text("Core navigation, Home, Back and volume controls remain available when the connected TV supports them.")
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.orbitBackground)
         .navigationTitle("Customize Remote")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -258,6 +298,8 @@ private struct FAQView: View {
                 )
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Color.orbitBackground)
         .navigationTitle("FAQ")
     }
 }
@@ -594,13 +636,10 @@ struct PremiumView: View {
             layout.constrained ? 7 : 10
         )
         .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(
-                cornerRadius:
-                    layout.constrained ? 12 : 15,
-                style: .continuous
-            )
-            .fill(Color.orbitSurface)
+        .orbitRaisedPanel(
+            cornerRadius:
+                layout.constrained ? 12 : 15,
+            shadowOpacity: 0.035
         )
     }
 
@@ -984,6 +1023,19 @@ struct PremiumView: View {
                         : 0.5
                 )
             )
+            .shadow(
+                color: Color.black.opacity(
+                    selectedID == id
+                    ? 0.055
+                    : 0.035
+                ),
+                radius:
+                    selectedID == id
+                    ? 8
+                    : 5,
+                x: 0,
+                y: 3
+            )
         }
         .buttonStyle(
             OrbitPressStyle(
@@ -1012,14 +1064,27 @@ private struct PremiumFeature: View {
             Image(systemName: icon)
                 .font(
                     .system(
-                        size: compact ? 16 : 18,
-                        weight: .medium
+                        size: compact ? 14 : 16,
+                        weight: .semibold
                     )
                 )
                 .frame(
-                    width: 28,
-                    height: 26,
+                    width: compact ? 30 : 34,
+                    height: compact ? 30 : 34,
                     alignment: .center
+                )
+                .background(
+                    Circle()
+                        .fill(
+                            Color.primary.opacity(0.045)
+                        )
+                )
+                .overlay(
+                    Circle()
+                        .stroke(
+                            Color.primary.opacity(0.07),
+                            lineWidth: 0.7
+                        )
                 )
 
             Text(title)
@@ -1068,6 +1133,7 @@ struct PrivacyPolicyView: View {
                 ]
             )
         }
+        .background(Color.orbitBackground)
         .navigationTitle("Privacy Policy")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -1107,6 +1173,7 @@ struct TermsOfServiceView: View {
                 ]
             )
         }
+        .background(Color.orbitBackground)
         .navigationTitle("Terms of Service")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -1147,6 +1214,7 @@ private struct AcknowledgementsView: View {
                 alignment: .leading
             )
         }
+        .background(Color.orbitBackground)
         .navigationTitle("Acknowledgements")
         .navigationBarTitleDisplayMode(.inline)
     }
