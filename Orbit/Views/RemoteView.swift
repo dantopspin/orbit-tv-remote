@@ -527,6 +527,26 @@ struct TouchpadView: View {
     }
 }
 
+private struct RemoteViewportHeightModifier: ViewModifier {
+    let fillsAvailableHeight: Bool
+    let availableHeight: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if fillsAvailableHeight {
+            content.frame(
+                height: availableHeight,
+                alignment: .top
+            )
+        } else {
+            content.frame(
+                minHeight: availableHeight,
+                alignment: .top
+            )
+        }
+    }
+}
+
 struct RemoteView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -541,17 +561,39 @@ struct RemoteView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let isCompactHeight = proxy.size.height < 720
-            let dpadSize = min(
-                proxy.size.width * 0.58,
-                isCompactHeight ? 176 : 224
+            let isCompactHeight =
+                proxy.size.height < 720
+
+            let heightProgress = min(
+                max(
+                    (proxy.size.height - 720) / 220,
+                    0
+                ),
+                1
             )
+
+            let dpadSize = min(
+                proxy.size.width *
+                    (0.58 + 0.04 * heightProgress),
+                isCompactHeight
+                ? 176
+                : 224 + 28 * heightProgress
+            )
+
             let verticalSpacing: CGFloat =
                 isCompactHeight ? 8 : 12
 
+            let fillsAvailableHeight =
+                !dynamicTypeSize.isAccessibilitySize &&
+                appModel.connectionState == .connected
+
             ScrollView(.vertical) {
-                VStack(spacing: verticalSpacing) {
+                VStack(spacing: 0) {
                     header
+
+                    Spacer(
+                        minLength: verticalSpacing
+                    )
 
                 if let message = appModel.connectionMessage {
                     VStack(spacing: 10) {
@@ -641,6 +683,10 @@ struct RemoteView: View {
                     .transition(.opacity)
                 }
 
+                Spacer(
+                    minLength: verticalSpacing
+                )
+
                 HStack {
                     if appModel.currentCapabilities.contains(.power) {
                         RoundRemoteButton(
@@ -694,6 +740,10 @@ struct RemoteView: View {
                     }
                 }
 
+                Spacer(
+                    minLength: verticalSpacing
+                )
+
                 if appModel.currentCapabilities.contains(.touchpad) {
                     Picker("Remote mode", selection: $mode) {
                         ForEach(RemoteControlMode.allCases, id: \.self) {
@@ -709,6 +759,10 @@ struct RemoteView: View {
                         }
                     }
                 }
+
+                Spacer(
+                    minLength: verticalSpacing
+                )
 
                 Group {
                     if mode == .touchpad &&
@@ -736,7 +790,14 @@ struct RemoteView: View {
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.16), value: mode)
 
-                HStack(spacing: 14) {
+                Spacer(
+                    minLength: verticalSpacing
+                )
+
+                VStack(
+                    spacing: verticalSpacing
+                ) {
+                    HStack(spacing: 14) {
                     Button {
                         appModel.send(.back)
                     } label: {
@@ -862,6 +923,7 @@ struct RemoteView: View {
                     .buttonStyle(OrbitPressStyle(cornerRadius: 22))
                     .foregroundStyle(.primary)
                 }
+                }
             }
                 .padding(.horizontal, 22)
                 .padding(.top, isCompactHeight ? 4 : 8)
@@ -872,9 +934,15 @@ struct RemoteView: View {
                     : (isCompactHeight ? 8 : 14)
                 )
                 .frame(
-                    maxWidth: .infinity,
-                    minHeight: proxy.size.height,
-                    alignment: .top
+                    maxWidth: .infinity
+                )
+                .modifier(
+                    RemoteViewportHeightModifier(
+                        fillsAvailableHeight:
+                            fillsAvailableHeight,
+                        availableHeight:
+                            proxy.size.height
+                    )
                 )
             }
             .scrollIndicators(.hidden)
