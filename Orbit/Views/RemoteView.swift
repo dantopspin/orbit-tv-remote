@@ -400,10 +400,47 @@ struct TouchpadView: View {
     let onCommand: (RemoteCommand) -> Void
 
     var body: some View {
-        RoundedRectangle(
-            cornerRadius: 34,
-            style: .continuous
-        )
+        touchpadSurface
+            .contentShape(
+                RoundedRectangle(
+                    cornerRadius: 34,
+                    style: .continuous
+                )
+            )
+            .onTapGesture {
+                onCommand(.select)
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 18)
+                    .onEnded(handleDrag)
+            )
+            .accessibilityLabel("TV touchpad")
+            .accessibilityHint(
+                "Swipe to navigate. Double tap to select."
+            )
+            .accessibilityAction(named: "Up") {
+                onCommand(.up)
+            }
+            .accessibilityAction(named: "Down") {
+                onCommand(.down)
+            }
+            .accessibilityAction(named: "Left") {
+                onCommand(.left)
+            }
+            .accessibilityAction(named: "Right") {
+                onCommand(.right)
+            }
+            .accessibilityAction(named: "Select") {
+                onCommand(.select)
+            }
+    }
+
+    private var touchpadSurface: some View {
+        ZStack {
+            RoundedRectangle(
+                cornerRadius: 34,
+                style: .continuous
+            )
             .fill(Color.orbitSurface)
             .overlay(
                 RoundedRectangle(
@@ -421,71 +458,72 @@ struct TouchpadView: View {
                 x: 0,
                 y: 5
             )
-            .overlay {
-                VStack(spacing: 10) {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                Color.primary.opacity(0.045)
-                            )
-                            .frame(
-                                width: 70,
-                                height: 70
-                            )
 
-                        Circle()
-                            .stroke(
-                                Color.primary.opacity(0.08),
-                                lineWidth: 0.8
-                            )
-                            .frame(
-                                width: 70,
-                                height: 70
-                            )
+            VStack(spacing: 10) {
+                touchTarget
 
-                        Image(systemName: "hand.draw")
-                            .font(
-                                .system(
-                                    size: 26,
-                                    weight: .light
-                                )
-                            )
-                    }
+                Text("Swipe to navigate")
+                    .font(
+                        .subheadline.weight(.semibold)
+                    )
 
-                    Text("Swipe to navigate")
-                        .font(.subheadline.weight(.semibold))
-
-                    Text("Tap to select")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text("Tap to select")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
-            .onTapGesture {
-                onCommand(.select)
-            }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 18)
-                    .onEnded { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
+        }
+    }
 
-                        guard max(abs(dx), abs(dy)) > 24 else { return }
+    private var touchTarget: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    Color.primary.opacity(0.045)
+                )
 
-                        if abs(dx) > abs(dy) {
-                            onCommand(dx > 0 ? .right : .left)
-                        } else {
-                            onCommand(dy > 0 ? .down : .up)
-                        }
-                    }
+            Circle()
+                .stroke(
+                    Color.primary.opacity(0.08),
+                    lineWidth: 0.8
+                )
+
+            Image(systemName: "hand.draw")
+                .font(
+                    .system(
+                        size: 26,
+                        weight: .light
+                    )
+                )
+        }
+        .frame(
+            width: 70,
+            height: 70
+        )
+    }
+
+    private func handleDrag(
+        _ value: DragGesture.Value
+    ) {
+        let dx = value.translation.width
+        let dy = value.translation.height
+
+        guard max(abs(dx), abs(dy)) > 24 else {
+            return
+        }
+
+        if abs(dx) > abs(dy) {
+            onCommand(
+                dx > 0
+                ? .right
+                : .left
             )
-            .accessibilityLabel("TV touchpad")
-            .accessibilityHint("Swipe to navigate. Double tap to select.")
-            .accessibilityAction(named: "Up") { onCommand(.up) }
-            .accessibilityAction(named: "Down") { onCommand(.down) }
-            .accessibilityAction(named: "Left") { onCommand(.left) }
-            .accessibilityAction(named: "Right") { onCommand(.right) }
-            .accessibilityAction(named: "Select") { onCommand(.select) }
+        } else {
+            onCommand(
+                dy > 0
+                ? .down
+                : .up
+            )
+        }
     }
 }
 
