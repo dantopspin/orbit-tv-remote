@@ -33,6 +33,11 @@ struct OrbitPressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .scaleEffect(
+                configuration.isPressed
+                ? 0.985
+                : 1
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(
@@ -42,7 +47,10 @@ struct OrbitPressStyle: ButtonStyle {
                     )
                     .allowsHitTesting(false)
             )
-            .animation(.easeOut(duration: 0.10), value: configuration.isPressed)
+            .animation(
+                .easeOut(duration: 0.10),
+                value: configuration.isPressed
+            )
     }
 }
 
