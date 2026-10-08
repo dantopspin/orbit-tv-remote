@@ -307,6 +307,14 @@ private struct PaywallLayout {
         constrained ? 5 : 7 + (2 * progress)
     }
 
+    var purchaseSpacing: CGFloat {
+        constrained ? 6 : 8 + (5 * progress)
+    }
+
+    var footerSpacing: CGFloat {
+        constrained ? 1 : 2 + (4 * progress)
+    }
+
     var planVerticalPadding: CGFloat {
         constrained ? 7 : 9 + (2 * progress)
     }
@@ -599,8 +607,7 @@ struct PremiumView: View {
         layout: PaywallLayout
     ) -> some View {
         VStack(
-            spacing:
-                layout.constrained ? 6 : 9
+            spacing: layout.purchaseSpacing
         ) {
             Text(
                 "The complete remote stays available on Free."
@@ -694,8 +701,7 @@ struct PremiumView: View {
         layout: PaywallLayout
     ) -> some View {
         VStack(
-            spacing:
-                layout.constrained ? 1 : 3
+            spacing: layout.footerSpacing
         ) {
             Button("Restore Purchases") {
                 Task {
