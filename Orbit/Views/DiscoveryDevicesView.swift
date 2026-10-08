@@ -78,36 +78,64 @@ struct DiscoveryView: View {
 
                 if appModel.discovery.devices.isEmpty,
                    !appModel.discovery.isSearching {
-                    ContentUnavailableView {
-                        Label("No TVs found yet", systemImage: "tv")
-                    } description: {
-                        Text(
-                            appModel.discovery.automaticSearchLimited
-                            ? "Orbit couldn’t complete the search. If you tapped Don’t Allow earlier, turn on Local Network for Orbit in iPhone Settings, then return and scan again."
-                            : (
-                                appModel.discovery.lastError ??
-                                "Make sure the TV is on and using the same Wi-Fi as this iPhone, then scan again."
+                    VStack(spacing: 4) {
+                        ContentUnavailableView {
+                            Label(
+                                "No TVs found yet",
+                                systemImage: "tv"
                             )
-                        )
-                    } actions: {
-                        Button("Scan Again") {
-                            appModel.discovery.startScan()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.primary)
+                        } description: {
+                            Text(
+                                appModel.discovery
+                                    .automaticSearchLimited
+                                ? "Orbit couldn’t complete the search. If you tapped Don’t Allow earlier, turn on Local Network for Orbit in iPhone Settings, then return and scan again."
+                                : (
+                                    appModel.discovery.lastError ??
+                                    "Make sure the TV is on and using the same Wi-Fi as this iPhone, then scan again."
+                                )
+                            )
+                        } actions: {
+                            Button("Scan Again") {
+                                appModel.discovery
+                                    .startScan()
+                            }
+                            .buttonStyle(
+                                .borderedProminent
+                            )
+                            .tint(.primary)
 
-                        if appModel.discovery.automaticSearchLimited ||
-                            appModel.localNetworkAccessLikelyDenied {
-                            Button("Open iPhone Settings") {
-                                guard let url = URL(
-                                    string:
-                                        UIApplication.openSettingsURLString
-                                ) else {
-                                    return
+                            if appModel.discovery
+                                .automaticSearchLimited ||
+                                appModel
+                                    .localNetworkAccessLikelyDenied {
+                                Button(
+                                    "Open iPhone Settings"
+                                ) {
+                                    guard let url = URL(
+                                        string:
+                                            UIApplication
+                                                .openSettingsURLString
+                                    ) else {
+                                        return
+                                    }
+
+                                    UIApplication
+                                        .shared
+                                        .open(url)
                                 }
-                                UIApplication.shared.open(url)
                             }
                         }
+
+                        Button("Can’t find your TV?") {
+                            showManualAddress = true
+                        }
+                        .foregroundStyle(.primary)
+                        .font(
+                            .subheadline.weight(
+                                .semibold
+                            )
+                        )
+                        .frame(minHeight: 44)
                     }
                 } else {
                     List(appModel.discovery.devices) { device in
@@ -217,12 +245,19 @@ struct DiscoveryView: View {
                 Spacer()
 
                 VStack(spacing: 6) {
-                    Button("Can’t find your TV?") {
-                        showManualAddress = true
+                    if appModel.discovery.isSearching ||
+                        !appModel.discovery.devices.isEmpty {
+                        Button("Can’t find your TV?") {
+                            showManualAddress = true
+                        }
+                        .foregroundStyle(.primary)
+                        .font(
+                            .subheadline.weight(
+                                .semibold
+                            )
+                        )
+                        .frame(minHeight: 44)
                     }
-                    .foregroundStyle(.primary)
-                    .font(.subheadline.weight(.semibold))
-                    .frame(minHeight: 44)
 
                     if appModel.currentDevice == nil {
                         Button("Later") {
@@ -230,7 +265,11 @@ struct DiscoveryView: View {
                             dismiss()
                         }
                         .foregroundStyle(.secondary)
-                        .font(.subheadline.weight(.semibold))
+                        .font(
+                            .subheadline.weight(
+                                .semibold
+                            )
+                        )
                         .frame(minHeight: 44)
                     }
                 }
