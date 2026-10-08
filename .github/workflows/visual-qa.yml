@@ -1,0 +1,186 @@
+name: Orbit Visual QA
+
+on:
+  push:
+    branches:
+      - qa/simulator-visual-validation
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: macos-15
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Select small, standard, and large iPhones
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j > /tmp/devices.json
+
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+
+          data = json.load(open("/tmp/devices.json"))
+          devices = []
+          for runtime_devices in data["devices"].values():
+              for device in runtime_devices:
+                  if device.get("isAvailable") and device["name"].startswith("iPhone"):
+                      devices.append((device["name"], device["udid"]))
+
+          by_name = {}
+          for name, udid in devices:
+              by_name.setdefault(name, udid)
+
+          def pick(preferred, excluded=set()):
+              for name in preferred:
+                  if name in by_name and by_name[name] not in excluded:
+                      return name, by_name[name]
+              for name, udid in devices:
+                  if udid not in excluded:
+                      return name, udid
+              raise RuntimeError("No available iPhone simulators")
+
+          small = pick([
+              "iPhone SE (3rd generation)",
+              "iPhone SE (2nd generation)",
+              "iPhone 13 mini"
+          ])
+          standard = pick([
+              "iPhone 16",
+              "iPhone 15",
+              "iPhone 16 Pro",
+              "iPhone 15 Pro"
+          ], {small[1]})
+          large = pick([
+              "iPhone 16 Pro Max",
+              "iPhone 15 Pro Max",
+              "iPhone 14 Pro Max"
+          ], {small[1], standard[1]})
+
+          print(f"SMALL_NAME={small[0]}")
+          print(f"SMALL_UDID={small[1]}")
+          print(f"STANDARD_NAME={standard[0]}")
+          print(f"STANDARD_UDID={standard[1]}")
+          print(f"LARGE_NAME={large[0]}")
+          print(f"LARGE_UDID={large[1]}")
+          PY
+
+      - name: Build Debug app for Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Orbit.xcodeproj \
+            -scheme Orbit \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$PWD/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+          APP_PATH="$(find "$PWD/DerivedData/Build/Products" -path '*Debug-iphonesimulator/Orbit.app' -print -quit)"
+          if [ -z "$APP_PATH" ]; then
+            echo "Orbit.app not found" >&2
+            exit 1
+          fi
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+      - name: Capture real SwiftUI screens
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p visual-qa
+          BUNDLE_ID="com.dantopspin.orbitremote"
+          SCREENS=(
+            onboarding
+            no-tv
+            remote
+            paywall
+            settings
+            keyboard
+            pairing
+            apps
+            devices
+            discovery
+          )
+
+          capture_device() {
+            local label="$1"
+            local udid="$2"
+
+            xcrun simctl boot "$udid" 2>/dev/null || true
+            xcrun simctl bootstatus "$udid" -b
+            xcrun simctl install "$udid" "$APP_PATH"
+            xcrun simctl ui "$udid" appearance light || true
+            xcrun simctl status_bar "$udid" override \
+              --time "9:41" \
+              --batteryState charged \
+              --batteryLevel 100 \
+              --wifiBars 3 \
+              --cellularBars 4 || true
+            xcrun simctl privacy "$udid" grant local-network "$BUNDLE_ID" || true
+
+            for screen in "${SCREENS[@]}"; do
+              xcrun simctl terminate "$udid" "$BUNDLE_ID" 2>/dev/null || true
+              xcrun simctl launch "$udid" "$BUNDLE_ID" \
+                -orbitVisualQA "$screen" >/dev/null
+
+              case "$screen" in
+                discovery) sleep 7 ;;
+                paywall|apps) sleep 4 ;;
+                *) sleep 2 ;;
+              esac
+
+              xcrun simctl io "$udid" screenshot \
+                "visual-qa/${label}-${screen}-light.png"
+            done
+
+            xcrun simctl shutdown "$udid" || true
+          }
+
+          capture_device "small" "$SMALL_UDID"
+          capture_device "standard" "$STANDARD_UDID"
+          capture_device "large" "$LARGE_UDID"
+
+          # Dark-mode spot check on the standard-size iPhone.
+          xcrun simctl boot "$STANDARD_UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$STANDARD_UDID" -b
+          xcrun simctl install "$STANDARD_UDID" "$APP_PATH"
+          xcrun simctl ui "$STANDARD_UDID" appearance dark || true
+          xcrun simctl status_bar "$STANDARD_UDID" override \
+            --time "9:41" \
+            --batteryState charged \
+            --batteryLevel 100 \
+            --wifiBars 3 \
+            --cellularBars 4 || true
+
+          for screen in onboarding no-tv remote paywall settings; do
+            xcrun simctl terminate "$STANDARD_UDID" "$BUNDLE_ID" 2>/dev/null || true
+            xcrun simctl launch "$STANDARD_UDID" "$BUNDLE_ID" \
+              -orbitVisualQA "$screen" >/dev/null
+            sleep 3
+            xcrun simctl io "$STANDARD_UDID" screenshot \
+              "visual-qa/standard-${screen}-dark.png"
+          done
+
+          xcrun simctl shutdown "$STANDARD_UDID" || true
+
+          {
+            echo "Small: $SMALL_NAME ($SMALL_UDID)"
+            echo "Standard: $STANDARD_NAME ($STANDARD_UDID)"
+            echo "Large: $LARGE_NAME ($LARGE_UDID)"
+          } > visual-qa/devices.txt
+
+      - name: Upload visual QA screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-visual-qa
+          path: visual-qa/
+          if-no-files-found: error
+          retention-days: 7
