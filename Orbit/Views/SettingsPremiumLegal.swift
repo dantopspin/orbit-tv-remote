@@ -284,11 +284,15 @@ private struct PaywallLayout {
     }
 
     var verticalPadding: CGFloat {
-        constrained ? 4 : 7 + (7 * progress)
+        constrained ? 4 : 6 + (2 * progress)
     }
 
-    var sectionGap: CGFloat {
-        constrained ? 5 : 10 + (18 * progress)
+    var sectionMinimumGap: CGFloat {
+        constrained ? 4 : 8 + (2 * progress)
+    }
+
+    var minorMinimumGap: CGFloat {
+        constrained ? 3 : 5 + (2 * progress)
     }
 
     var headerSpacing: CGFloat {
@@ -323,17 +327,6 @@ private struct PaywallLayout {
         constrained ? 46 : 48 + (4 * progress)
     }
 
-    var contentMinimumHeight: CGFloat? {
-        guard fillsAvailableHeight else {
-            return nil
-        }
-
-        return max(
-            0,
-            availableHeight -
-            (verticalPadding * 2)
-        )
-    }
 }
 
 struct PremiumView: View {
@@ -450,19 +443,31 @@ struct PremiumView: View {
 
             sectionSpace(layout)
 
-            purchaseSection(layout: layout)
+            freeReassurance(layout: layout)
+
+            minorSpace(layout)
+
+            plansSection(layout: layout)
+
+            minorSpace(layout)
+
+            purchaseButton(layout: layout)
+
+            minorSpace(layout)
+
+            purchaseMeta(layout: layout)
 
             sectionSpace(layout)
 
             paywallFooter(layout: layout)
         }
         .frame(
-            maxWidth: .infinity
-        )
-        .frame(
-            minHeight:
-                layout.contentMinimumHeight,
-            alignment: .center
+            maxWidth: .infinity,
+            maxHeight:
+                layout.fillsAvailableHeight
+                ? .infinity
+                : nil,
+            alignment: .top
         )
         .padding(
             .horizontal,
@@ -478,9 +483,38 @@ struct PremiumView: View {
     private func sectionSpace(
         _ layout: PaywallLayout
     ) -> some View {
-        Color.clear
-            .frame(height: layout.sectionGap)
-            .accessibilityHidden(true)
+        if layout.fillsAvailableHeight {
+            Spacer(
+                minLength:
+                    layout.sectionMinimumGap
+            )
+        } else {
+            Color.clear
+                .frame(
+                    height:
+                        layout.sectionMinimumGap
+                )
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private func minorSpace(
+        _ layout: PaywallLayout
+    ) -> some View {
+        if layout.fillsAvailableHeight {
+            Spacer(
+                minLength:
+                    layout.minorMinimumGap
+            )
+        } else {
+            Color.clear
+                .frame(
+                    height:
+                        layout.minorMinimumGap
+                )
+                .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder
@@ -603,87 +637,103 @@ struct PremiumView: View {
     }
 
     @ViewBuilder
-    private func purchaseSection(
+    private func freeReassurance(
+        layout: PaywallLayout
+    ) -> some View {
+        Text(
+            "The complete remote stays available on Free."
+        )
+        .font(
+            layout.constrained
+            ? .caption2
+            : .footnote
+        )
+        .foregroundStyle(.secondary)
+        .frame(
+            maxWidth: .infinity,
+            alignment: .leading
+        )
+    }
+
+    @ViewBuilder
+    private func plansSection(
         layout: PaywallLayout
     ) -> some View {
         VStack(
-            spacing: layout.purchaseSpacing
+            spacing: layout.planSpacing
         ) {
-            Text(
-                "The complete remote stays available on Free."
-            )
-            .font(
-                layout.constrained
-                ? .caption2
-                : .footnote
-            )
-            .foregroundStyle(.secondary)
-            .frame(
-                maxWidth: .infinity,
-                alignment: .leading
+            planRow(
+                id: PurchaseManager.weeklyID,
+                badge: nil,
+                layout: layout
             )
 
-            VStack(
-                spacing: layout.planSpacing
-            ) {
-                planRow(
-                    id: PurchaseManager.weeklyID,
-                    badge: nil,
-                    layout: layout
-                )
+            planRow(
+                id: PurchaseManager.monthlyID,
+                badge: "Great Value",
+                layout: layout
+            )
+        }
+    }
 
-                planRow(
-                    id: PurchaseManager.monthlyID,
-                    badge: "Great Value",
-                    layout: layout
-                )
+    @ViewBuilder
+    private func purchaseButton(
+        layout: PaywallLayout
+    ) -> some View {
+        Button(
+            selectedID ==
+                PurchaseManager.monthlyID
+            ? "Continue with Monthly"
+            : "Continue with Weekly"
+        ) {
+            guard let product =
+                    appModel.purchases.product(
+                        id: selectedID
+                    ) else {
+                return
             }
 
-            Button(
-                selectedID ==
-                    PurchaseManager.monthlyID
-                ? "Continue with Monthly"
-                : "Continue with Weekly"
-            ) {
-                guard let product =
-                        appModel.purchases.product(
-                            id: selectedID
-                        ) else {
-                    return
-                }
-
-                Task {
-                    if await appModel.purchases.purchase(
-                        product
-                    ) {
-                        appModel
-                            .resumePendingProSelection()
-                        dismiss()
-                    }
+            Task {
+                if await appModel.purchases.purchase(
+                    product
+                ) {
+                    appModel
+                        .resumePendingProSelection()
+                    dismiss()
                 }
             }
-            .buttonStyle(
-                OrbitPrimaryButtonStyle(
-                    height: layout.ctaHeight
-                )
+        }
+        .buttonStyle(
+            OrbitPrimaryButtonStyle(
+                height: layout.ctaHeight
             )
-            .disabled(
-                appModel.purchases.product(
-                    id: selectedID
-                ) == nil ||
-                appModel.purchases.isPurchasing
-            )
-            .overlay {
-                if appModel.purchases.isPurchasing {
-                    ProgressView()
-                        .tint(
-                            Color(
-                                uiColor: .systemBackground
-                            )
+        )
+        .disabled(
+            appModel.purchases.product(
+                id: selectedID
+            ) == nil ||
+            appModel.purchases.isPurchasing
+        )
+        .overlay {
+            if appModel.purchases.isPurchasing {
+                ProgressView()
+                    .tint(
+                        Color(
+                            uiColor: .systemBackground
                         )
-                }
+                    )
             }
+        }
+    }
 
+    @ViewBuilder
+    private func purchaseMeta(
+        layout: PaywallLayout
+    ) -> some View {
+        VStack(
+            spacing:
+                layout.footerSpacing
+        ) {
             Text(
                 "Cancel anytime • Managed through Apple"
             )
