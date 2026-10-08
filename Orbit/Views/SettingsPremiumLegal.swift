@@ -262,6 +262,80 @@ private struct FAQView: View {
     }
 }
 
+private struct PaywallLayout {
+    let availableHeight: CGFloat
+    let constrained: Bool
+    let fillsAvailableHeight: Bool
+
+    private var progress: CGFloat {
+        guard !constrained else { return 0 }
+
+        return min(
+            max(
+                (availableHeight - 560) / 280,
+                0
+            ),
+            1
+        )
+    }
+
+    var horizontalPadding: CGFloat {
+        constrained ? 16 : 18 + (4 * progress)
+    }
+
+    var verticalPadding: CGFloat {
+        constrained ? 4 : 7 + (7 * progress)
+    }
+
+    var sectionGap: CGFloat {
+        constrained ? 5 : 10 + (18 * progress)
+    }
+
+    var headerSpacing: CGFloat {
+        constrained ? 2 : 3 + (2 * progress)
+    }
+
+    var markSize: CGFloat {
+        constrained ? 32 : 40 + (6 * progress)
+    }
+
+    var featureSpacing: CGFloat {
+        constrained ? 4 : 6 + (4 * progress)
+    }
+
+    var planSpacing: CGFloat {
+        constrained ? 5 : 7 + (2 * progress)
+    }
+
+    var purchaseSpacing: CGFloat {
+        constrained ? 6 : 8 + (5 * progress)
+    }
+
+    var footerSpacing: CGFloat {
+        constrained ? 1 : 2 + (4 * progress)
+    }
+
+    var planVerticalPadding: CGFloat {
+        constrained ? 7 : 9 + (2 * progress)
+    }
+
+    var ctaHeight: CGFloat {
+        constrained ? 46 : 48 + (4 * progress)
+    }
+
+    var contentMinimumHeight: CGFloat? {
+        guard fillsAvailableHeight else {
+            return nil
+        }
+
+        return max(
+            0,
+            availableHeight -
+            (verticalPadding * 2)
+        )
+    }
+}
+
 struct PremiumView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
@@ -275,42 +349,55 @@ struct PremiumView: View {
             Group {
                 if dynamicTypeSize.isAccessibilitySize {
                     ScrollView {
-                        paywallContent(compact: true)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 10)
+                        paywallContent(
+                            layout: PaywallLayout(
+                                availableHeight: 0,
+                                constrained: true,
+                                fillsAvailableHeight: false
+                            )
+                        )
                     }
+                    .scrollBounceBehavior(.basedOnSize)
                 } else {
                     GeometryReader { proxy in
                         ViewThatFits(in: .vertical) {
-                            paywallContent(compact: false)
-                                .padding(.horizontal, 22)
-                                .padding(.vertical, 12)
+                            paywallContent(
+                                layout: PaywallLayout(
+                                    availableHeight:
+                                        proxy.size.height,
+                                    constrained: false,
+                                    fillsAvailableHeight: true
+                                )
+                            )
 
-                            paywallContent(compact: true)
-                                .padding(.horizontal, 18)
-                                .padding(.vertical, 8)
-
-                            ScrollView {
-                                paywallContent(compact: true)
-                                    .padding(.horizontal, 18)
-                                    .padding(.vertical, 8)
-                            }
-                            .scrollBounceBehavior(.basedOnSize)
+                            paywallContent(
+                                layout: PaywallLayout(
+                                    availableHeight:
+                                        proxy.size.height,
+                                    constrained: true,
+                                    fillsAvailableHeight: true
+                                )
+                            )
                         }
                         .frame(
                             width: proxy.size.width,
                             height: proxy.size.height,
-                            alignment: .top
+                            alignment: .center
                         )
                     }
                 }
             }
             .background(Color.orbitBackground)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
+                ToolbarItem(
+                    placement: .cancellationAction
+                ) {
+                    Button {
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
                     }
+                    .accessibilityLabel("Close")
                 }
             }
             .confirmationDialog(
@@ -342,133 +429,219 @@ struct PremiumView: View {
 
     @ViewBuilder
     private func paywallContent(
-        compact: Bool
+        layout: PaywallLayout
     ) -> some View {
-        VStack(spacing: compact ? 7 : 12) {
-            VStack(spacing: compact ? 2 : 4) {
-                OrbitMark(
-                    size: compact ? 36 : 52
-                )
-                .padding(.bottom, compact ? 1 : 3)
+        VStack(spacing: 0) {
+            paywallHeader(layout: layout)
 
-                Text("Orbit Pro")
-                    .font(
-                        compact
-                        ? .caption.weight(.semibold)
-                        : .subheadline.weight(.semibold)
-                    )
-                    .foregroundStyle(.secondary)
-
-                Text("Make Orbit yours.")
-                    .font(
-                        compact
-                        ? .title2.bold()
-                        : .title.bold()
-                    )
-                    .multilineTextAlignment(.center)
-
-                Text(
-                    compact
-                    ? "More TVs, custom controls, favorite shortcuts."
-                    : "More TVs, your preferred layout, and the shortcuts you use most."
-                )
-                .font(compact ? .caption : .subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .lineLimit(compact ? 1 : 2)
-            }
+            sectionSpace(layout)
 
             if let context =
                 appModel.proGateContextMessage {
-                VStack(spacing: compact ? 5 : 8) {
-                    Text(context)
-                        .font(compact ? .caption : .subheadline)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(compact ? 2 : 3)
+                proGateContext(
+                    context,
+                    layout: layout
+                )
 
-                    if appModel
-                        .canReplaceFreeTVWithPendingCandidate {
-                        Button("Replace My Current TV") {
-                            showReplaceConfirmation = true
-                        }
-                        .font(
-                            compact
-                            ? .caption.weight(.semibold)
-                            : .subheadline.weight(.semibold)
-                        )
-                        .buttonStyle(.bordered)
-                        .controlSize(
-                            compact ? .small : .regular
-                        )
-                    }
+                sectionSpace(layout)
+            }
+
+            premiumBenefits(layout: layout)
+
+            sectionSpace(layout)
+
+            purchaseSection(layout: layout)
+
+            sectionSpace(layout)
+
+            paywallFooter(layout: layout)
+        }
+        .frame(
+            maxWidth: .infinity
+        )
+        .frame(
+            minHeight:
+                layout.contentMinimumHeight,
+            alignment: .center
+        )
+        .padding(
+            .horizontal,
+            layout.horizontalPadding
+        )
+        .padding(
+            .vertical,
+            layout.verticalPadding
+        )
+    }
+
+    @ViewBuilder
+    private func sectionSpace(
+        _ layout: PaywallLayout
+    ) -> some View {
+        Color.clear
+            .frame(height: layout.sectionGap)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func paywallHeader(
+        layout: PaywallLayout
+    ) -> some View {
+        VStack(spacing: layout.headerSpacing) {
+            OrbitMark(size: layout.markSize)
+                .padding(
+                    .bottom,
+                    layout.constrained ? 0 : 2
+                )
+
+            Text("Orbit Pro")
+                .font(
+                    layout.constrained
+                    ? .caption.weight(.semibold)
+                    : .subheadline.weight(.semibold)
+                )
+                .foregroundStyle(.secondary)
+
+            Text("Get more from Orbit.")
+                .font(
+                    layout.constrained
+                    ? .title3.bold()
+                    : .title2.bold()
+                )
+                .multilineTextAlignment(.center)
+
+            Text(
+                "More TVs, custom controls, favorite shortcuts."
+            )
+            .font(
+                layout.constrained
+                ? .caption
+                : .subheadline
+            )
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .lineLimit(1)
+            .minimumScaleFactor(0.88)
+        }
+    }
+
+    @ViewBuilder
+    private func proGateContext(
+        _ context: String,
+        layout: PaywallLayout
+    ) -> some View {
+        VStack(
+            spacing:
+                layout.constrained ? 4 : 7
+        ) {
+            Text(context)
+                .font(
+                    layout.constrained
+                    ? .caption2
+                    : .caption
+                )
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+
+            if appModel
+                .canReplaceFreeTVWithPendingCandidate {
+                Button("Replace My Current TV") {
+                    showReplaceConfirmation = true
                 }
-                .padding(compact ? 8 : 12)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(
-                        cornerRadius: compact ? 12 : 16,
-                        style: .continuous
-                    )
-                    .fill(Color.orbitSurface)
+                .font(
+                    .caption.weight(.semibold)
                 )
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
+        }
+        .padding(
+            layout.constrained ? 7 : 10
+        )
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(
+                cornerRadius:
+                    layout.constrained ? 12 : 15,
+                style: .continuous
+            )
+            .fill(Color.orbitSurface)
+        )
+    }
 
-            VStack(
-                alignment: .leading,
-                spacing: compact ? 5 : 11
-            ) {
-                PremiumFeature(
-                    icon: "tv.and.mediabox",
-                    title: "Multiple TVs & Rooms",
-                    detail:
-                        "Keep every TV ready and label each one by room.",
-                    compact: compact
-                )
+    @ViewBuilder
+    private func premiumBenefits(
+        layout: PaywallLayout
+    ) -> some View {
+        VStack(
+            alignment: .leading,
+            spacing: layout.featureSpacing
+        ) {
+            PremiumFeature(
+                icon: "tv.and.mediabox",
+                title: "Multiple TVs & Rooms",
+                compact: layout.constrained
+            )
 
-                PremiumFeature(
-                    icon: "slider.horizontal.3",
-                    title: "Custom Remote",
-                    detail:
-                        "Choose your default control mode and keep only the controls you use.",
-                    compact: compact
-                )
+            PremiumFeature(
+                icon: "slider.horizontal.3",
+                title: "Custom Remote",
+                compact: layout.constrained
+            )
 
-                PremiumFeature(
-                    icon: "star",
-                    title: "Favorites",
-                    detail:
-                        "Keep favorite apps and inputs one tap away.",
-                    compact: compact
-                )
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            PremiumFeature(
+                icon: "star",
+                title: "Favorites",
+                compact: layout.constrained
+            )
+        }
+        .frame(
+            maxWidth: .infinity,
+            alignment: .leading
+        )
+    }
 
+    @ViewBuilder
+    private func purchaseSection(
+        layout: PaywallLayout
+    ) -> some View {
+        VStack(
+            spacing: layout.purchaseSpacing
+        ) {
             Text(
                 "The complete remote stays available on Free."
             )
-            .font(compact ? .caption2 : .footnote)
+            .font(
+                layout.constrained
+                ? .caption2
+                : .footnote
+            )
             .foregroundStyle(.secondary)
             .frame(
                 maxWidth: .infinity,
                 alignment: .leading
             )
 
-            VStack(spacing: compact ? 6 : 8) {
+            VStack(
+                spacing: layout.planSpacing
+            ) {
                 planRow(
                     id: PurchaseManager.weeklyID,
                     badge: nil,
-                    compact: compact
+                    layout: layout
                 )
 
                 planRow(
                     id: PurchaseManager.monthlyID,
                     badge: "Great Value",
-                    compact: compact
+                    layout: layout
                 )
             }
 
             Button(
-                selectedID == PurchaseManager.monthlyID
+                selectedID ==
+                    PurchaseManager.monthlyID
                 ? "Continue with Monthly"
                 : "Continue with Weekly"
             ) {
@@ -483,14 +656,15 @@ struct PremiumView: View {
                     if await appModel.purchases.purchase(
                         product
                     ) {
-                        appModel.resumePendingProSelection()
+                        appModel
+                            .resumePendingProSelection()
                         dismiss()
                     }
                 }
             }
             .buttonStyle(
                 OrbitPrimaryButtonStyle(
-                    height: compact ? 48 : 52
+                    height: layout.ctaHeight
                 )
             )
             .disabled(
@@ -510,43 +684,53 @@ struct PremiumView: View {
                 }
             }
 
-            Text("Cancel anytime • Managed through Apple")
-                .font(compact ? .caption2 : .caption)
-                .foregroundStyle(.secondary)
+            Text(
+                "Cancel anytime • Managed through Apple"
+            )
+            .font(.caption2)
+            .foregroundStyle(.secondary)
 
-            purchaseStatus(compact: compact)
+            purchaseStatus(
+                compact: layout.constrained
+            )
+        }
+    }
 
+    @ViewBuilder
+    private func paywallFooter(
+        layout: PaywallLayout
+    ) -> some View {
+        VStack(
+            spacing: layout.footerSpacing
+        ) {
             Button("Restore Purchases") {
                 Task {
                     await appModel.purchases.restore()
 
                     if appModel.purchases.isPremium {
-                        appModel.resumePendingProSelection()
+                        appModel
+                            .resumePendingProSelection()
                         dismiss()
                     }
                 }
             }
-            .disabled(appModel.purchases.isPurchasing)
-            .font(
-                compact
-                ? .caption.weight(.semibold)
-                : .footnote.weight(.semibold)
+            .disabled(
+                appModel.purchases.isPurchasing
             )
-            .foregroundStyle(.primary)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.secondary)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
 
             Text(
-                compact
-                ? "Charged to your Apple ID. Renews automatically unless canceled at least 24 hours before renewal. Manage in App Store Subscriptions."
-                : "Payment is charged to your Apple ID at confirmation. Subscriptions renew automatically until canceled at least 24 hours before the end of the current period. Manage or cancel in App Store Subscriptions."
+                "Charged to your Apple ID. Renews automatically unless canceled at least 24 hours before renewal. Manage in App Store Subscriptions."
             )
             .font(.caption2)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
-            .lineLimit(compact ? 3 : 4)
+            .lineLimit(3)
 
-            HStack(spacing: 18) {
+            HStack(spacing: 20) {
                 NavigationLink {
                     TermsOfServiceView()
                 } label: {
@@ -563,7 +747,7 @@ struct PremiumView: View {
                         .contentShape(Rectangle())
                 }
             }
-            .font(compact ? .caption2 : .caption)
+            .font(.caption)
             .foregroundStyle(.secondary)
         }
     }
@@ -603,10 +787,13 @@ struct PremiumView: View {
                    !appModel.purchases.isLoading {
                     Button("Try Loading Prices Again") {
                         Task {
-                            await appModel.purchases.refresh()
+                            await appModel
+                                .purchases.refresh()
                         }
                     }
-                    .font(.caption.weight(.semibold))
+                    .font(
+                        .caption.weight(.semibold)
+                    )
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
@@ -618,7 +805,7 @@ struct PremiumView: View {
     private func planRow(
         id: String,
         badge: String?,
-        compact: Bool
+        layout: PaywallLayout
     ) -> some View {
         let product =
             appModel.purchases.product(id: id)
@@ -627,27 +814,38 @@ struct PremiumView: View {
             selectedID = id
             Haptics.shared.selection()
         } label: {
-            HStack(spacing: compact ? 9 : 12) {
+            HStack(
+                spacing:
+                    layout.constrained ? 9 : 12
+            ) {
                 Image(
                     systemName:
                         selectedID == id
                         ? "largecircle.fill.circle"
                         : "circle"
                 )
-                .font(compact ? .body : .title3)
+                .font(
+                    layout.constrained
+                    ? .body
+                    : .title3
+                )
 
                 VStack(
                     alignment: .leading,
-                    spacing: compact ? 0 : 2
+                    spacing:
+                        layout.constrained ? 0 : 1
                 ) {
                     Text(
-                        id == PurchaseManager.weeklyID
+                        id ==
+                            PurchaseManager.weeklyID
                         ? "Weekly"
                         : "Monthly"
                     )
                     .font(
-                        compact
-                        ? .subheadline.weight(.semibold)
+                        layout.constrained
+                        ? .subheadline.weight(
+                            .semibold
+                        )
                         : .headline
                     )
 
@@ -656,7 +854,7 @@ struct PremiumView: View {
                             "\(product.displayPrice) / \(id == PurchaseManager.weeklyID ? "week" : "month")"
                         )
                         .font(
-                            compact
+                            layout.constrained
                             ? .caption
                             : .subheadline
                         )
@@ -664,11 +862,13 @@ struct PremiumView: View {
                     } else {
                         Text("Loading price…")
                             .font(
-                                compact
+                                layout.constrained
                                 ? .caption
                                 : .subheadline
                             )
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(
+                                .secondary
+                            )
                     }
                 }
 
@@ -677,46 +877,51 @@ struct PremiumView: View {
                 if let badge {
                     Text(badge)
                         .font(
-                            compact
-                            ? .caption2.weight(.semibold)
-                            : .caption.weight(.semibold)
+                            .caption.weight(
+                                .semibold
+                            )
                         )
                         .padding(
                             .horizontal,
-                            compact ? 8 : 10
+                            layout.constrained
+                            ? 8 : 10
                         )
                         .padding(
                             .vertical,
-                            compact ? 4 : 6
+                            layout.constrained
+                            ? 3 : 5
                         )
                         .background(
                             Capsule()
                                 .fill(
-                                    Color.primary.opacity(
-                                        0.08
-                                    )
+                                    Color.primary
+                                        .opacity(0.08)
                                 )
                         )
                 }
             }
             .padding(
                 .horizontal,
-                compact ? 13 : 16
+                layout.constrained ? 13 : 16
             )
             .padding(
                 .vertical,
-                compact ? 9 : 13
+                layout.planVerticalPadding
             )
             .background(
                 RoundedRectangle(
-                    cornerRadius: compact ? 15 : 18,
+                    cornerRadius:
+                        layout.constrained
+                        ? 15 : 18,
                     style: .continuous
                 )
                 .fill(Color.orbitSurface)
             )
             .overlay(
                 RoundedRectangle(
-                    cornerRadius: compact ? 15 : 18,
+                    cornerRadius:
+                        layout.constrained
+                        ? 15 : 18,
                     style: .continuous
                 )
                 .stroke(
@@ -732,7 +937,8 @@ struct PremiumView: View {
         }
         .buttonStyle(
             OrbitPressStyle(
-                cornerRadius: compact ? 15 : 18
+                cornerRadius:
+                    layout.constrained ? 15 : 18
             )
         )
         .foregroundStyle(.primary)
@@ -746,39 +952,32 @@ struct PremiumView: View {
 private struct PremiumFeature: View {
     let icon: String
     let title: String
-    let detail: String
     let compact: Bool
 
     var body: some View {
         HStack(
-            alignment: compact ? .center : .top,
-            spacing: compact ? 10 : 14
+            alignment: .center,
+            spacing: compact ? 10 : 12
         ) {
             Image(systemName: icon)
-                .frame(width: 24)
                 .font(
-                    compact
-                    ? .subheadline
-                    : .headline
+                    .system(
+                        size: compact ? 16 : 18,
+                        weight: .medium
+                    )
+                )
+                .frame(
+                    width: 28,
+                    height: 26,
+                    alignment: .center
                 )
 
-            VStack(
-                alignment: .leading,
-                spacing: 2
-            ) {
-                Text(title)
-                    .font(
-                        compact
-                        ? .subheadline.weight(.semibold)
-                        : .headline
-                    )
-
-                if !compact {
-                    Text(detail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            Text(title)
+                .font(
+                    compact
+                    ? .subheadline.weight(.semibold)
+                    : .headline
+                )
 
             Spacer(minLength: 0)
         }
