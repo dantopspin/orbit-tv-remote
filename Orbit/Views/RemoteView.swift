@@ -12,7 +12,26 @@ struct DPadView: View {
             ZStack {
                 Circle()
                     .fill(Color.orbitSurface)
-                    .overlay(Circle().stroke(Color.orbitSeparator, lineWidth: 0.5))
+                    .overlay(
+                        Circle()
+                            .stroke(
+                                Color.primary.opacity(0.09),
+                                lineWidth: 0.8
+                            )
+                    )
+                    .shadow(
+                        color: Color.black.opacity(0.08),
+                        radius: 14,
+                        x: 0,
+                        y: 6
+                    )
+
+                Circle()
+                    .fill(Color.primary.opacity(0.035))
+                    .frame(
+                        width: size * 0.39,
+                        height: size * 0.39
+                    )
 
                 DirectionButton(systemName: "chevron.up", command: .up, onCommand: onCommand)
                     .offset(y: -radius)
@@ -30,8 +49,23 @@ struct DPadView: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.primary)
                         .frame(width: size * 0.32, height: size * 0.32)
-                        .background(Circle().fill(Color(uiColor: .systemBackground)))
-                        .overlay(Circle().stroke(Color.orbitSeparator, lineWidth: 0.6))
+                        .background(
+                            Circle()
+                                .fill(Color.orbitSurfaceRaised)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    Color.primary.opacity(0.11),
+                                    lineWidth: 0.9
+                                )
+                        )
+                        .shadow(
+                            color: Color.black.opacity(0.08),
+                            radius: 6,
+                            x: 0,
+                            y: 3
+                        )
                 }
                 .buttonStyle(OrbitPressStyle(cornerRadius: size))
                 .accessibilityLabel("OK")
@@ -160,12 +194,31 @@ struct RoundRemoteButton: View {
             }
             .foregroundStyle(destructivePower ? Color.white : Color.primary)
             .frame(width: 58, height: 58)
-            .background(Circle().fill(destructivePower ? Color.orbitPower : Color.orbitSurface))
+            .background(
+                Circle()
+                    .fill(
+                        destructivePower
+                        ? Color.orbitPower
+                        : Color.orbitSurface
+                    )
+            )
             .overlay(
-                Circle().stroke(
-                    destructivePower ? Color.clear : Color.orbitSeparator,
-                    lineWidth: 0.5
-                )
+                Circle()
+                    .stroke(
+                        destructivePower
+                        ? Color.white.opacity(0.18)
+                        : Color.primary.opacity(0.08),
+                        lineWidth: 0.8
+                    )
+            )
+            .shadow(
+                color:
+                    destructivePower
+                    ? Color.orbitPower.opacity(0.22)
+                    : Color.black.opacity(0.06),
+                radius: destructivePower ? 10 : 7,
+                x: 0,
+                y: destructivePower ? 4 : 3
             )
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 29))
@@ -204,8 +257,61 @@ struct VolumePill: View {
             )
         }
         .frame(height: 54)
-        .background(Capsule().fill(Color.orbitSurface))
-        .overlay(Capsule().stroke(Color.orbitSeparator, lineWidth: 0.5))
+        .background(
+            Capsule()
+                .fill(Color.orbitSurface)
+        )
+        .overlay(
+            Capsule()
+                .stroke(
+                    Color.primary.opacity(0.08),
+                    lineWidth: 0.8
+                )
+        )
+        .overlay {
+            GeometryReader { proxy in
+                let third =
+                    proxy.size.width / 3
+
+                Path { path in
+                    path.move(
+                        to: CGPoint(
+                            x: third,
+                            y: 12
+                        )
+                    )
+                    path.addLine(
+                        to: CGPoint(
+                            x: third,
+                            y: proxy.size.height - 12
+                        )
+                    )
+                    path.move(
+                        to: CGPoint(
+                            x: third * 2,
+                            y: 12
+                        )
+                    )
+                    path.addLine(
+                        to: CGPoint(
+                            x: third * 2,
+                            y: proxy.size.height - 12
+                        )
+                    )
+                }
+                .stroke(
+                    Color.orbitSeparator,
+                    lineWidth: 0.5
+                )
+            }
+            .allowsHitTesting(false)
+        }
+        .shadow(
+            color: Color.black.opacity(0.05),
+            radius: 7,
+            x: 0,
+            y: 3
+        )
     }
 }
 
@@ -266,8 +372,23 @@ struct PlaybackRow: View {
                 .font(.system(size: 15, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 46)
-                .background(Capsule().fill(Color.orbitSurface))
-                .overlay(Capsule().stroke(Color.orbitSeparator, lineWidth: 0.5))
+                .background(
+                    Capsule()
+                        .fill(Color.orbitSurface)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(
+                            Color.primary.opacity(0.08),
+                            lineWidth: 0.8
+                        )
+                )
+                .shadow(
+                    color: Color.black.opacity(0.05),
+                    radius: 6,
+                    x: 0,
+                    y: 3
+                )
         }
         .buttonStyle(OrbitPressStyle(cornerRadius: 23))
         .foregroundStyle(.primary)
@@ -279,49 +400,130 @@ struct TouchpadView: View {
     let onCommand: (RemoteCommand) -> Void
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 34, style: .continuous)
-            .fill(Color.orbitSurface)
-            .overlay(
-                RoundedRectangle(cornerRadius: 34, style: .continuous)
-                    .stroke(Color.orbitSeparator, lineWidth: 0.5)
+        touchpadSurface
+            .contentShape(
+                RoundedRectangle(
+                    cornerRadius: 34,
+                    style: .continuous
+                )
             )
-            .overlay {
-                VStack(spacing: 8) {
-                    Image(systemName: "hand.draw")
-                        .font(.system(size: 28, weight: .light))
-                    Text("Swipe to navigate")
-                        .font(.subheadline.weight(.medium))
-                    Text("Tap to select")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 34, style: .continuous))
             .onTapGesture {
                 onCommand(.select)
             }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 18)
-                    .onEnded { value in
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-
-                        guard max(abs(dx), abs(dy)) > 24 else { return }
-
-                        if abs(dx) > abs(dy) {
-                            onCommand(dx > 0 ? .right : .left)
-                        } else {
-                            onCommand(dy > 0 ? .down : .up)
-                        }
-                    }
+                    .onEnded(handleDrag)
             )
             .accessibilityLabel("TV touchpad")
-            .accessibilityHint("Swipe to navigate. Double tap to select.")
-            .accessibilityAction(named: "Up") { onCommand(.up) }
-            .accessibilityAction(named: "Down") { onCommand(.down) }
-            .accessibilityAction(named: "Left") { onCommand(.left) }
-            .accessibilityAction(named: "Right") { onCommand(.right) }
-            .accessibilityAction(named: "Select") { onCommand(.select) }
+            .accessibilityHint(
+                "Swipe to navigate. Double tap to select."
+            )
+            .accessibilityAction(named: "Up") {
+                onCommand(.up)
+            }
+            .accessibilityAction(named: "Down") {
+                onCommand(.down)
+            }
+            .accessibilityAction(named: "Left") {
+                onCommand(.left)
+            }
+            .accessibilityAction(named: "Right") {
+                onCommand(.right)
+            }
+            .accessibilityAction(named: "Select") {
+                onCommand(.select)
+            }
+    }
+
+    private var touchpadSurface: some View {
+        ZStack {
+            RoundedRectangle(
+                cornerRadius: 34,
+                style: .continuous
+            )
+            .fill(Color.orbitSurface)
+            .overlay(
+                RoundedRectangle(
+                    cornerRadius: 34,
+                    style: .continuous
+                )
+                .stroke(
+                    Color.primary.opacity(0.08),
+                    lineWidth: 0.8
+                )
+            )
+            .shadow(
+                color: Color.black.opacity(0.06),
+                radius: 12,
+                x: 0,
+                y: 5
+            )
+
+            VStack(spacing: 10) {
+                touchTarget
+
+                Text("Swipe to navigate")
+                    .font(
+                        .subheadline.weight(.semibold)
+                    )
+
+                Text("Tap to select")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var touchTarget: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    Color.primary.opacity(0.045)
+                )
+
+            Circle()
+                .stroke(
+                    Color.primary.opacity(0.08),
+                    lineWidth: 0.8
+                )
+
+            Image(systemName: "hand.draw")
+                .font(
+                    .system(
+                        size: 26,
+                        weight: .light
+                    )
+                )
+        }
+        .frame(
+            width: 70,
+            height: 70
+        )
+    }
+
+    private func handleDrag(
+        _ value: DragGesture.Value
+    ) {
+        let dx = value.translation.width
+        let dy = value.translation.height
+
+        guard max(abs(dx), abs(dy)) > 24 else {
+            return
+        }
+
+        if abs(dx) > abs(dy) {
+            onCommand(
+                dx > 0
+                ? .right
+                : .left
+            )
+        } else {
+            onCommand(
+                dy > 0
+                ? .down
+                : .up
+            )
+        }
     }
 }
 
@@ -469,7 +671,23 @@ struct RemoteView: View {
                                     ? 8
                                     : 0
                                 )
-                                .background(Capsule().fill(Color.orbitSurface))
+                                .background(
+                                    Capsule()
+                                        .fill(Color.orbitSurface)
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(
+                                            Color.primary.opacity(0.08),
+                                            lineWidth: 0.8
+                                        )
+                                )
+                                .shadow(
+                                    color: Color.black.opacity(0.05),
+                                    radius: 6,
+                                    x: 0,
+                                    y: 3
+                                )
                         }
                         .buttonStyle(OrbitPressStyle(cornerRadius: 23))
                         .foregroundStyle(.primary)
@@ -525,7 +743,23 @@ struct RemoteView: View {
                         Label("Back", systemImage: "arrow.uturn.backward")
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 46)
-                            .background(Capsule().fill(Color.orbitSurface))
+                            .background(
+                                Capsule()
+                                    .fill(Color.orbitSurface)
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(
+                                        Color.primary.opacity(0.08),
+                                        lineWidth: 0.8
+                                    )
+                            )
+                            .shadow(
+                                color: Color.black.opacity(0.05),
+                                radius: 6,
+                                x: 0,
+                                y: 3
+                            )
                     }
 
                     Button {
@@ -534,7 +768,23 @@ struct RemoteView: View {
                         Label("Home", systemImage: "house.fill")
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 46)
-                            .background(Capsule().fill(Color.orbitSurface))
+                            .background(
+                                Capsule()
+                                    .fill(Color.orbitSurface)
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(
+                                        Color.primary.opacity(0.08),
+                                        lineWidth: 0.8
+                                    )
+                            )
+                            .shadow(
+                                color: Color.black.opacity(0.05),
+                                radius: 6,
+                                x: 0,
+                                y: 3
+                            )
                     }
                 }
                 .buttonStyle(OrbitPressStyle(cornerRadius: 23))
@@ -591,7 +841,23 @@ struct RemoteView: View {
                         }
                     }
                     .font(.subheadline.weight(.semibold))
-                    .background(Capsule().fill(Color.orbitSurface))
+                    .background(
+                        Capsule()
+                            .fill(Color.orbitSurface)
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(
+                                Color.primary.opacity(0.08),
+                                lineWidth: 0.8
+                            )
+                    )
+                    .shadow(
+                        color: Color.black.opacity(0.05),
+                        radius: 6,
+                        x: 0,
+                        y: 3
+                    )
                     .clipShape(Capsule())
                     .buttonStyle(OrbitPressStyle(cornerRadius: 22))
                     .foregroundStyle(.primary)
@@ -705,47 +971,108 @@ struct RemoteView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
-            Spacer()
-                .frame(width: 44)
-
-            Spacer()
-
-            VStack(spacing: 3) {
-                Text(appModel.currentDevice?.name ?? "TV")
-                    .font(.headline)
-                    .lineLimit(
-                        dynamicTypeSize.isAccessibilitySize
-                        ? 2
-                        : 1
+        HStack(spacing: 12) {
+            Image(systemName: "tv")
+                .font(
+                    .system(
+                        size: 15,
+                        weight: .semibold
                     )
+                )
+                .frame(
+                    width: 38,
+                    height: 38
+                )
+                .background(
+                    Circle()
+                        .fill(Color.orbitSurface)
+                )
+                .overlay(
+                    Circle()
+                        .stroke(
+                            Color.primary.opacity(0.08),
+                            lineWidth: 0.8
+                        )
+                )
+                .shadow(
+                    color: Color.black.opacity(0.05),
+                    radius: 6,
+                    x: 0,
+                    y: 3
+                )
+
+            VStack(
+                alignment: .leading,
+                spacing: 3
+            ) {
+                Text(
+                    appModel.currentDevice?.name
+                    ?? "TV"
+                )
+                .font(.headline)
+                .lineLimit(
+                    dynamicTypeSize.isAccessibilitySize
+                    ? 2
+                    : 1
+                )
 
                 HStack(spacing: 6) {
                     Circle()
                         .fill(
-                            appModel.connectionState == .connected
+                            appModel.connectionState ==
+                                .connected
                             ? Color.primary
-                            : Color.secondary.opacity(0.35)
+                            : Color.secondary.opacity(
+                                0.35
+                            )
                         )
-                        .frame(width: 6, height: 6)
+                        .frame(
+                            width: 6,
+                            height: 6
+                        )
 
-                    Text(appModel.connectionState.label)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        appModel.connectionState.label
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             Button {
                 showMore = true
             } label: {
                 Image(systemName: "gearshape")
                     .font(.headline)
-                    .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.orbitSurface))
+                    .frame(
+                        width: 44,
+                        height: 44
+                    )
+                    .background(
+                        Circle()
+                            .fill(Color.orbitSurface)
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(
+                                Color.primary.opacity(
+                                    0.08
+                                ),
+                                lineWidth: 0.8
+                            )
+                    )
+                    .shadow(
+                        color: Color.black.opacity(0.05),
+                        radius: 6,
+                        x: 0,
+                        y: 3
+                    )
             }
-            .buttonStyle(OrbitPressStyle(cornerRadius: 22))
+            .buttonStyle(
+                OrbitPressStyle(cornerRadius: 22)
+            )
             .foregroundStyle(.primary)
             .accessibilityLabel("Menu")
         }
