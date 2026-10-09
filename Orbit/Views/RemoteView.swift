@@ -557,6 +557,7 @@ struct RemoteView: View {
     @State private var showKeyboard = false
     @State private var showAppsInputs = false
     @State private var showFindTV = false
+    @State private var showDevices = false
     @State private var appsInputsInitialSelection = 0
 
     var body: some View {
@@ -963,6 +964,9 @@ struct RemoteView: View {
         .sheet(isPresented: $showFindTV) {
             DiscoveryView(showsCloseButton: true)
         }
+        .sheet(isPresented: $showDevices) {
+            DevicesView()
+        }
         .sheet(isPresented: pairingPresented) {
             TVPairingSheet()
         }
@@ -1039,73 +1043,121 @@ struct RemoteView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "tv")
-                .font(
-                    .system(
-                        size: 15,
-                        weight: .semibold
-                    )
-                )
-                .frame(
-                    width: 38,
-                    height: 38
-                )
-                .background(
-                    Circle()
-                        .fill(Color.orbitSurface)
-                )
-                .overlay(
-                    Circle()
-                        .stroke(
-                            Color.primary.opacity(0.08),
-                            lineWidth: 0.8
-                        )
-                )
-                .shadow(
-                    color: Color.black.opacity(0.05),
-                    radius: 6,
-                    x: 0,
-                    y: 3
-                )
-
-            VStack(
-                alignment: .leading,
-                spacing: 3
-            ) {
-                Text(
-                    appModel.currentDevice?.name
-                    ?? "TV"
-                )
-                .font(.headline)
-                .lineLimit(
-                    dynamicTypeSize.isAccessibilitySize
-                    ? 2
-                    : 1
-                )
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(
-                            appModel.connectionState ==
-                                .connected
-                            ? Color.primary
-                            : Color.secondary.opacity(
-                                0.35
+        HStack(spacing: 10) {
+            Button {
+                showDevices = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "tv")
+                        .font(
+                            .system(
+                                size: 15,
+                                weight: .semibold
                             )
                         )
                         .frame(
-                            width: 6,
-                            height: 6
+                            width: 38,
+                            height: 38
+                        )
+                        .background(
+                            Circle()
+                                .fill(Color.orbitSurface)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    Color.primary.opacity(
+                                        0.08
+                                    ),
+                                    lineWidth: 0.8
+                                )
+                        )
+                        .shadow(
+                            color: Color.black.opacity(
+                                0.05
+                            ),
+                            radius: 6,
+                            x: 0,
+                            y: 3
                         )
 
-                    Text(
-                        appModel.connectionState.label
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    VStack(
+                        alignment: .leading,
+                        spacing: 3
+                    ) {
+                        HStack(spacing: 5) {
+                            Text(
+                                appModel.currentDevice?
+                                    .name
+                                ?? "TV"
+                            )
+                            .font(.headline)
+                            .lineLimit(
+                                dynamicTypeSize
+                                    .isAccessibilitySize
+                                ? 2
+                                : 1
+                            )
+
+                            Image(
+                                systemName:
+                                    "chevron.down"
+                            )
+                            .font(
+                                .caption2.weight(
+                                    .semibold
+                                )
+                            )
+                            .foregroundStyle(
+                                .secondary
+                            )
+                        }
+
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(
+                                    appModel
+                                        .connectionState ==
+                                        .connected
+                                    ? Color.primary
+                                    : Color.secondary
+                                        .opacity(0.35)
+                                )
+                                .frame(
+                                    width: 6,
+                                    height: 6
+                                )
+
+                            Text(
+                                appModel
+                                    .connectionState
+                                    .label
+                            )
+                            .font(.caption)
+                            .foregroundStyle(
+                                .secondary
+                            )
+                        }
+                    }
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(
+                OrbitPressStyle(
+                    cornerRadius: 19
+                )
+            )
+            .foregroundStyle(.primary)
+            .accessibilityLabel(
+                "Switch TV"
+            )
+            .accessibilityValue(
+                appModel.currentDevice?.name
+                ?? "Current TV"
+            )
+            .accessibilityHint(
+                "Shows your saved TVs and rooms."
+            )
 
             Spacer(minLength: 8)
 
@@ -1132,7 +1184,9 @@ struct RemoteView: View {
                             )
                     )
                     .shadow(
-                        color: Color.black.opacity(0.05),
+                        color: Color.black.opacity(
+                            0.05
+                        ),
                         radius: 6,
                         x: 0,
                         y: 3
