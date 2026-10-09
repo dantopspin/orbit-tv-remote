@@ -1,5 +1,6 @@
 import SwiftUI
 import StoreKit
+import UIKit
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var appModel
@@ -91,6 +92,16 @@ struct SettingsView: View {
                 }
 
                 Section("Support & Legal") {
+                    NavigationLink {
+                        SupportView()
+                    } label: {
+                        Label(
+                            "Support",
+                            systemImage:
+                                "lifepreserver"
+                        )
+                    }
+
                     NavigationLink {
                         FAQView()
                     } label: {
@@ -186,6 +197,111 @@ struct SettingsView: View {
         ) as? String ?? "—"
 
         return "\(version) (\(build))"
+    }
+}
+
+private struct SupportView: View {
+    @Environment(AppModel.self) private var appModel
+
+    private let issueURL = URL(
+        string:
+            "https://github.com/dantopspin/orbit-tv-remote/issues/new?title=Orbit%20support%20request"
+    )!
+
+    var body: some View {
+        Form {
+            Section {
+                Link(destination: issueURL) {
+                    Label(
+                        "Contact Support",
+                        systemImage:
+                            "message"
+                    )
+                }
+
+                ShareLink(
+                    item: diagnosticReport,
+                    subject:
+                        Text("Orbit diagnostics")
+                ) {
+                    Label(
+                        "Share Diagnostics",
+                        systemImage:
+                            "square.and.arrow.up"
+                    )
+                }
+            } footer: {
+                Text(
+                    "Support requests currently open Orbit’s public issue tracker. Don’t include personal information, pairing codes, or TV network addresses."
+                )
+            }
+
+            Section("Diagnostic Report") {
+                Text(diagnosticReport)
+                    .font(.footnote.monospaced())
+                    .textSelection(.enabled)
+            }
+
+            Section {
+                Text(
+                    "The report intentionally excludes TV IP addresses, device IDs, pairing tokens, PINs, and text typed through the remote."
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color.orbitBackground)
+        .navigationTitle("Support")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var diagnosticReport: String {
+        let version =
+            Bundle.main.object(
+                forInfoDictionaryKey:
+                    "CFBundleShortVersionString"
+            ) as? String ?? "—"
+
+        let build =
+            Bundle.main.object(
+                forInfoDictionaryKey:
+                    "CFBundleVersion"
+            ) as? String ?? "—"
+
+        let platform =
+            appModel.currentDevice?
+                .platform.displayName
+            ?? "No TV selected"
+
+        let capabilities =
+            appModel.currentCapabilities
+                .map(\.rawValue)
+                .sorted()
+                .joined(separator: ", ")
+
+        let plan: String
+
+        switch appModel.purchases.activeProductID {
+        case PurchaseManager.weeklyID:
+            plan = "Pro Weekly"
+        case PurchaseManager.monthlyID:
+            plan = "Pro Monthly"
+        default:
+            plan =
+                appModel.purchases.isPremium
+                ? "Pro"
+                : "Free"
+        }
+
+        return """
+        Orbit \(version) (\(build))
+        iOS \(UIDevice.current.systemVersion)
+        TV platform: \(platform)
+        Connection: \(appModel.connectionState.label)
+        Plan: \(plan)
+        Capabilities: \(capabilities.isEmpty ? "none reported" : capabilities)
+        """
     }
 }
 
@@ -1124,11 +1240,11 @@ struct PrivacyPolicyView: View {
                     ),
                     (
                         "5. Support",
-                        "If you contact Orbit through the support method listed on the App Store product page, information you voluntarily send may be used to respond to your request."
+                        "If you contact Orbit through Settings → Support, information you voluntarily send may be used to respond to your request."
                     ),
                     (
                         "6. Controller",
-                        "Controller: the Orbit developer identified on the App Store product page.\nSupport: use the contact method listed on Orbit’s App Store product page."
+                        "Controller: the Orbit developer identified on the App Store product page.\nSupport: use Settings → Support in Orbit."
                     )
                 ]
             )
@@ -1168,7 +1284,7 @@ struct TermsOfServiceView: View {
                     ),
                     (
                         "6. Contact",
-                        "Controller: the Orbit developer identified on the App Store product page.\nSupport: use the contact method listed on Orbit’s App Store product page."
+                        "Controller: the Orbit developer identified on the App Store product page.\nSupport: use Settings → Support in Orbit."
                     )
                 ]
             )
