@@ -1314,6 +1314,9 @@ final class PurchaseManager {
                     return lhs.id == Self.weeklyID
                 }
         } catch {
+            OrbitDiagnostics.shared.recordPurchaseFailure(
+                operation: "load_products"
+            )
             errorMessage =
                 "Couldn’t load prices. Check your connection and try again."
         }
@@ -1349,6 +1352,9 @@ final class PurchaseManager {
                 return false
             }
         } catch {
+            OrbitDiagnostics.shared.recordPurchaseFailure(
+                operation: "purchase"
+            )
             errorMessage =
                 "The purchase couldn’t be completed. Please try again."
             return false
@@ -1367,6 +1373,9 @@ final class PurchaseManager {
             try await AppStore.sync()
             await refreshEntitlements()
         } catch {
+            OrbitDiagnostics.shared.recordPurchaseFailure(
+                operation: "restore"
+            )
             errorMessage =
                 "Couldn’t restore purchases. Check your connection and try again."
         }
@@ -2967,6 +2976,10 @@ final class AppModel {
     }
 
     private func applyControlError(_ error: Error) {
+        OrbitDiagnostics.shared.recordConnectionFailure(
+            error
+        )
+
         lastControlError =
             userFacingMessage(for: error)
 

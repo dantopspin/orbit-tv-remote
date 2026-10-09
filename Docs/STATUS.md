@@ -21,6 +21,9 @@ Orbit is in release-candidate stabilization. Feature scope for 1.0 is frozen.
 - Pro data preservation across subscription expiry
 - Valid 1024x1024 RGB app icon with CI validation
 - Privacy manifest, acknowledgements and in-app legal screens
+- In-app Support screen with privacy-safe diagnostic sharing
+- MetricKit and unified logging using coarse, non-sensitive error categories
+- CI secret/signing-material scan plus hardened `.gitignore`
 - Release builds compile Roku and Fire TV adapters out; those platforms remain experimental/debug-only
 - Debug build, unit tests and Release simulator build in CI
 
@@ -29,14 +32,14 @@ Orbit is in release-candidate stabilization. Feature scope for 1.0 is frozen.
 Items requiring repository work:
 - Keep CI green on the final stabilization head
 - Complete any fixes exposed by real-TV hardware testing, especially D-pad long-press behavior and LG app/input permissions
-- Finalize controller/support details in legal copy once release identity/contact are supplied
 
 Items requiring Apple/developer-account setup:
 - Request and receive Apple's multicast networking entitlement before promising Samsung/LG SSDP discovery on physical iPhone
 - Add the granted multicast capability to the App ID, provisioning profile and target entitlements
 - Set the Apple Developer team for signing
 - Create `orbit.weekly` and `orbit.monthly` in App Store Connect in one subscription group and ensure the Paid Apps agreement is active
-- Configure privacy-policy URL, Terms/EULA metadata, TestFlight beta details and support contact
+- Configure privacy-policy URL, Terms/EULA metadata and TestFlight beta details
+- Enable a GitHub `main` branch rule requiring PRs + the `iOS Build` status check and blocking force pushes
 
 ## Hardware validation required
 

@@ -6,7 +6,9 @@ import Security
 final class FireTVAdapter: NSObject, TVControlling {
     private(set) var device: TVDevice
 
-    private static let apiKey = "0987654321"
+    // Public fixed header value used by Fire TV's local Lightning protocol.
+    // This is not an Orbit credential or billable service key.
+    private static let lightningProtocolHeaderValue = "0987654321"
     private static let lightningPort = 8080
     private static let wakePort = 8009
 
@@ -604,7 +606,7 @@ final class FireTVAdapter: NSObject, TVControlling {
         request.httpMethod = method
         request.httpBody = body
         request.setValue(
-            Self.apiKey,
+            Self.lightningProtocolHeaderValue,
             forHTTPHeaderField: "X-Api-Key"
         )
         request.setValue(
