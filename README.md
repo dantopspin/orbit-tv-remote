@@ -36,6 +36,9 @@ Roku and Fire TV adapters are experimental and compile only in Debug builds.
 - StoreKit 2 weekly/monthly subscriptions
 - Keychain-backed pairing credentials
 - Privacy manifest, legal screens and acknowledgements
+- Settings support route with privacy-safe diagnostics
+- Native MetricKit/unified-log diagnostics without private TV data
+- CI checks for committed secrets and signing material
 - Debug build, unit tests, app-icon validation and Release build in CI
 
 ## Discovery on physical iPhone
@@ -48,4 +51,4 @@ If a saved TV receives a new DHCP address, Free users can open **Add or Find TV*
 
 Open `Orbit.xcodeproj` in Xcode 16+ and run the `Orbit` scheme on iOS 17+.
 
-See `Docs/ARCHITECTURE.md`, `Docs/COMPATIBILITY.md`, `Docs/MULTICAST.md`, and `Docs/STATUS.md` for release details.
+See `Docs/ARCHITECTURE.md`, `Docs/COMPATIBILITY.md`, `Docs/MULTICAST.md`, `Docs/STATUS.md`, `Docs/RELEASE_HARDENING.md`, and `Docs/ROLLBACK.md` for release details.
