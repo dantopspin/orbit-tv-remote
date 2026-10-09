@@ -655,18 +655,29 @@ final class LGWebOSAdapter: NSObject, TVControlling {
         if response["type"] as? String == "error" {
             let message =
                 response["error"] as? String ??
-                "LG TV rejected the request."
+                ""
+            let lowered = message.lowercased()
 
-            if message.contains("401") ||
-                message.contains("403") {
+            if lowered.contains("401") ||
+                lowered.contains("403") ||
+                lowered.contains("unauthorized") {
+                OrbitDiagnostics.shared.recordVendorFailure(
+                    platform: "lg_webos",
+                    category: "permission_denied"
+                )
                 throw TVControlError.permissionDenied(
-                    message
+                    "LG TV denied that request. Reconnect Orbit and accept any permission prompt shown on the TV."
                 )
             }
 
+            OrbitDiagnostics.shared.recordVendorFailure(
+                platform: "lg_webos",
+                category: "request_rejected"
+            )
             throw TVControlError.rejected(
                 status: nil,
-                message: message
+                message:
+                    "LG TV rejected that request. Try again."
             )
         }
 
