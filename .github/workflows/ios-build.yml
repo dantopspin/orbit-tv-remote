@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Reject committed secrets
         shell: bash
@@ -90,7 +92,70 @@ jobs:
                   )
               sys.exit(1)
 
-          print("No forbidden secret patterns found.")
+          history_patterns = [
+              r"sk-[A-Za-z0-9_-]{20,}",
+              r"AIza[0-9A-Za-z_-]{30,}",
+              r"AKIA[0-9A-Z]{16}",
+              r"gh[pousr]_[A-Za-z0-9]{30,}",
+              r"xox[baprs]-[A-Za-z0-9-]{20,}",
+              r"sk_(?:live|test)_[A-Za-z0-9]{16,}",
+              r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+          ]
+
+          history_regex = "|".join(
+              f"(?:{pattern})"
+              for pattern in history_patterns
+          )
+
+          commits = subprocess.check_output(
+              ["git", "rev-list", "--all"],
+              text=True
+          ).splitlines()
+
+          history_findings = []
+
+          for commit in commits:
+              result = subprocess.run(
+                  [
+                      "git",
+                      "grep",
+                      "-I",
+                      "-n",
+                      "-E",
+                      history_regex,
+                      commit,
+                  ],
+                  text=True,
+                  capture_output=True,
+              )
+
+              if result.returncode not in (0, 1):
+                  print(
+                      result.stderr,
+                      file=sys.stderr
+                  )
+                  sys.exit(result.returncode)
+
+              if result.stdout.strip():
+                  history_findings.append(
+                      result.stdout.strip()
+                  )
+
+          if history_findings:
+              print(
+                  "Potential secrets found in Git history:",
+                  file=sys.stderr
+              )
+              for finding in history_findings:
+                  print(
+                      finding,
+                      file=sys.stderr
+                  )
+              sys.exit(1)
+
+          print(
+              f"No forbidden secret patterns found in current tree or {len(commits)} commit(s)."
+          )
           PY
 
       - name: Validate app icon
