@@ -2,6 +2,91 @@ import Foundation
 import SwiftUI
 import UIKit
 import Security
+import OSLog
+import MetricKit
+
+final class OrbitDiagnostics: NSObject,
+    MXMetricManagerSubscriber {
+    static let shared = OrbitDiagnostics()
+
+    private let logger = Logger(
+        subsystem: "com.dantopspin.orbitremote",
+        category: "Orbit"
+    )
+
+    private override init() {
+        super.init()
+        MXMetricManager.shared.add(self)
+    }
+
+    deinit {
+        MXMetricManager.shared.remove(self)
+    }
+
+    func recordConnectionFailure(
+        _ error: Error
+    ) {
+        let category: String
+
+        if let controlError = error as? TVControlError {
+            switch controlError {
+            case .unsupported:
+                category = "unsupported"
+            case .unreachable:
+                category = "unreachable"
+            case .transport:
+                category = "transport"
+            case .permissionDenied:
+                category = "permission_denied"
+            case .rejected(let status, _):
+                category = status.map {
+                    "rejected_\($0)"
+                } ?? "rejected"
+            case .invalidResponse:
+                category = "invalid_response"
+            }
+        } else {
+            category = "other"
+        }
+
+        logger.error(
+            "TV connection/control failure: \(category, privacy: .public)"
+        )
+    }
+
+    func recordPurchaseFailure(
+        operation: String
+    ) {
+        logger.error(
+            "StoreKit operation failed: \(operation, privacy: .public)"
+        )
+    }
+
+    func recordVendorFailure(
+        platform: String,
+        category: String
+    ) {
+        logger.error(
+            "Vendor request failed: \(platform, privacy: .public) / \(category, privacy: .public)"
+        )
+    }
+
+    func didReceive(
+        _ payloads: [MXMetricPayload]
+    ) {
+        logger.info(
+            "MetricKit delivered \(payloads.count, privacy: .public) metric payload(s)"
+        )
+    }
+
+    func didReceive(
+        _ payloads: [MXDiagnosticPayload]
+    ) {
+        logger.error(
+            "MetricKit delivered \(payloads.count, privacy: .public) diagnostic payload(s)"
+        )
+    }
+}
 
 struct AppSettings {
     enum Keys {
