@@ -52,3 +52,9 @@ If a saved TV receives a new DHCP address, Free users can open **Add or Find TV*
 Open `Orbit.xcodeproj` in Xcode 16+ and run the `Orbit` scheme on iOS 17+.
 
 See `Docs/ARCHITECTURE.md`, `Docs/COMPATIBILITY.md`, `Docs/MULTICAST.md`, `Docs/STATUS.md`, `Docs/RELEASE_HARDENING.md`, and `Docs/ROLLBACK.md` for release details.
+
+## Interoperability research
+
+Development-only REA helpers live under `Tools/REA/`. They are used for authorized protocol/interoperability research and are deliberately excluded from the Orbit Xcode target and App Store binary.
+
+See `Tools/REA/README.md` for the workflow.
