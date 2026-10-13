@@ -19,3 +19,11 @@ Secrets.xcconfig
 
 # Local diagnostic exports.
 Orbit-Diagnostics-*.txt
+
+# Local REA interoperability research artifacts.
+Tools/REA/targets/
+Tools/REA/captures/
+Tools/REA/output/
+Tools/REA/snapshots/
+Tools/REA/work/
+.rea.backup*
