@@ -170,6 +170,26 @@ jobs:
 
           echo "REA research tooling is isolated from the shipping Xcode target."
 
+      - name: Validate REA helper scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          scripts=(
+            Tools/REA/setup.sh
+            Tools/REA/doctor.sh
+            Tools/REA/analyze-android.sh
+            Tools/REA/analyze-native.sh
+            Tools/REA/new-investigation.sh
+          )
+
+          for script in "${scripts[@]}"; do
+            test -x "$script"
+            bash -n "$script"
+          done
+
+          echo "REA helper scripts are executable and syntactically valid."
+
       - name: Validate app icon
         shell: bash
         run: |
